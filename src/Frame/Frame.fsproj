@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net7.0</TargetFramework>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Frame.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Voicevox\Voicevox.fsproj" />
+    <ProjectReference Include="..\Appearance\Appearance.fsproj" />
+    <ProjectReference Include="..\FFmpeg\FFmpeg.fsproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="NAudio" Version="2.2.1" />
+  </ItemGroup>
+</Project>
