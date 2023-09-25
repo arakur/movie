@@ -43,7 +43,7 @@ type FrameOutput =
 
         let subtitleFilesTask =
             Seq.zip frames subtitleFiles
-            |> Seq.mapi (fun i (speech, subtitleFile) ->
+            |> Seq.iteri (fun i (speech, subtitleFile) ->
                 let typstSrc = sprintf "tmp/typst_src%d.typ" i
                 let typstOut = sprintf "tmp/typst_out%d.pdf" i
 
@@ -73,29 +73,22 @@ type FrameOutput =
                             subtitleFile
                     )
 
-                async {
-                    typstProc.WaitForExitAsync() |> Async.AwaitTask |> Async.RunSynchronously
-                    magickProc.WaitForExitAsync() |> Async.AwaitTask |> Async.RunSynchronously
-                })
-            |> Seq.toList
+                typstProc.WaitForExitAsync() |> Async.AwaitTask |> Async.RunSynchronously
+                magickProc.WaitForExitAsync() |> Async.AwaitTask |> Async.RunSynchronously)
 
         let speechFiles: string list =
-            frames |> List.mapi (fun i _ -> i) |> List.map (sprintf "tmp/voice_%d.wav")
+            frames |> List.mapi (fun i _ -> sprintf "tmp/voice_%d.wav" i)
 
-        let speechFilesTask =
-            async {
-                use voicevox = new Voicevox.Voicevox()
+        do
+            use voicevox = new Voicevox.Voicevox()
 
-                for frame, speechFile in Seq.zip frames speechFiles do
-                    match voicevox.Synthesize frame.Speech with
-                    | Ok wav -> wav.Save(speechFile)
-                    | Error msg -> printfn "Error: %s" msg
-            }
+            for frame, speechFile in Seq.zip frames speechFiles do
+                printfn "%s" speechFile // DEBUG
+                printfn "speech %A" frame.Speech // DEBUG
 
-        (speechFilesTask :: subtitleFilesTask)
-        |> Async.Parallel
-        |> Async.RunSynchronously
-        |> ignore
+                match voicevox.Synthesize frame.Speech with
+                | Ok wav -> wav.Save(speechFile)
+                | Error msg -> printfn "Error: %s" msg
 
         //
 
