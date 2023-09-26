@@ -17,6 +17,8 @@
     <ProjectReference Include="..\FFmpeg\FFmpeg.fsproj" />
     <ProjectReference Include="..\Appearance\Appearance.fsproj" />
     <ProjectReference Include="..\Frame\Frame.fsproj" />
+    <ProjectReference Include="..\Typst\Typst.fsproj" />
+    <ProjectReference Include="..\Measure\Measure.fsproj" />
   </ItemGroup>
 
   <ItemGroup>

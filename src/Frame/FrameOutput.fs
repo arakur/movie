@@ -1,5 +1,7 @@
 namespace Frame
 
+open Measure
+
 open FFmpeg
 open FFmpeg.FFmpegBuilder
 
@@ -15,7 +17,7 @@ type FrameOutput =
       SubtitlePosition: {| X: int; Y: int |} }
 
     static member framesToOutput
-        (typst: string)
+        (typst: Typst.Typst)
         (magick: ImageMagick.ImageMagick)
         (voicevox: Voicevox.Voicevox)
         (frames: Frame list)
@@ -26,26 +28,23 @@ type FrameOutput =
         let subtitleTasks =
             Seq.zip frames subtitleFiles
             |> Seq.mapi (fun i (speech, subtitleFile) ->
-                let typstSrc = sprintf "tmp/typst_src%d.typ" i
-                let typstOut = sprintf "tmp/typst_out%d.pdf" i
+                let uuid = System.Guid.NewGuid().ToString("N")
 
-                let content =
-                    sprintf
-                        "#set page(width: %fem, height: %fem, margin: 1em);#set text(size: %fpt, weight: \"%s\", fill: rgb(\"%s\"));%s"
-                        (float speech.Subtitle.Width / speech.Subtitle.FontSize)
-                        (float speech.Subtitle.Height / speech.Subtitle.FontSize)
-                        speech.Subtitle.FontSize
-                        speech.Subtitle.FontWeight
-                        speech.Subtitle.FontColor
-                        speech.Subtitle.Text
+                let typstOut = sprintf "tmp/typst_out_%s.pdf" uuid
+
+                let content: Typst.TypstSource =
+                    { Page =
+                        { Width = float speech.Subtitle.Width |> pt.ofFloat
+                          Height = float speech.Subtitle.Height |> pt.ofFloat
+                          Margin = 0.0<pt> }
+                      Text =
+                        { Size = speech.Subtitle.FontSize
+                          Weight = speech.Subtitle.FontWeight
+                          Fill = speech.Subtitle.FontColor }
+                      Content = speech.Subtitle.Text }
 
                 task {
-                    do! System.IO.File.WriteAllTextAsync(typstSrc, content)
-
-                    do!
-                        System.Diagnostics.Process
-                            .Start(typst, sprintf "compile %s %s" typstSrc typstOut)
-                            .WaitForExitAsync()
+                    do! typst.CompileAsync(content, typstOut)
 
                     do!
                         magick
@@ -123,10 +122,8 @@ type FrameOutput =
                       X = appearance.X
                       Y = appearance.Y })
               SubtitlePosition =
-                {| X = frame.Subtitle.X
-                   Y = frame.Subtitle.Y |} })
-
-
+                {| X = int frame.Subtitle.X
+                   Y = int frame.Subtitle.Y |} })
 
     static member exportVideo (ffmpeg: FFmpeg) (background: string) (frameOutputs: FrameOutput list) (output: string) =
         let arguments =

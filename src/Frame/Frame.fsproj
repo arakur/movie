@@ -11,6 +11,8 @@
     <ProjectReference Include="..\Voicevox\Voicevox.fsproj" />
     <ProjectReference Include="..\Appearance\Appearance.fsproj" />
     <ProjectReference Include="..\FFmpeg\FFmpeg.fsproj" />
+    <ProjectReference Include="..\Typst\Typst.fsproj" />
+    <ProjectReference Include="..\Measure\Measure.fsproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="NAudio" Version="2.2.1" />

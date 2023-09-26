@@ -1,7 +1,10 @@
 ﻿open Voicevox
 
+open Measure
+
 open Appearance
 open ImageMagick
+open Typst
 
 open FFmpeg
 
@@ -37,17 +40,17 @@ let app app0 app1 : Frame.FrameAppearance list =
     [ { Appearance = app0; X = 0; Y = 0 }; { Appearance = app1; X = 800; Y = 0 } ]
 
 let subtitle =
-    {| Size = 50.0
-       Weight = "bold"
+    {| Size = 50.0<pt>
+       Weight = Bold
        Family = "Noto Sans CJK JP"
-       X = 400
-       Y = 700
-       Width = 1000
-       Height = 300 |}
+       X = 400<pt>
+       Y = 700<pt>
+       Width = 1000<pt>
+       Height = 300<pt> |}
 
 let color =
-    {| 春日部つむぎ = "#FBCA4D"
-       四国めたん = "#E7609E" |}
+    {| 春日部つむぎ = RGB(251, 202, 77)
+       四国めたん = RGB(231, 96, 158) |}
 
 let frames: Frame.Frame list =
     [ { Speech =
@@ -99,7 +102,7 @@ let frames: Frame.Frame list =
 //
 
 do
-    let typst = "typst"
+    let typst = Typst("typst")
 
     let magick = ImageMagick("magick")
 

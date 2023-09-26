@@ -1,15 +1,17 @@
 ﻿namespace Frame
 
+open Measure
+
 type Subtitle =
     { Text: string
-      FontColor: string
-      FontSize: float
-      FontWeight: string
+      FontColor: Typst.Color
+      FontSize: float<pt>
+      FontWeight: Typst.Weight
       FontFamily: string
-      X: int
-      Y: int
-      Width: int
-      Height: int }
+      X: int<pt>
+      Y: int<pt>
+      Width: int<pt>
+      Height: int<pt> }
 
 type FrameAppearance =
     { Appearance: Appearance.Appearance
