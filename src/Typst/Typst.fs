@@ -61,7 +61,7 @@ type TypstSource =
 
         let text =
             sprintf
-                "#set text(size: %fpt, weight: \"%s\", fill: %s)"
+                "#set text(size: %fpt, weight: %s, fill: %s)"
                 this.Text.Size
                 (this.Text.Weight.Compose())
                 (this.Text.Fill.Compose())
