@@ -15,8 +15,6 @@ let unwrap<'a, 'b> (res: Result<'a, 'b>) : 'a =
 
 //
 
-//
-
 let 春日部つむぎ = Appearance.LoadDirectory("appearance/春日部つむぎ")
 let 四国めたん = Appearance.LoadDirectory("appearance/四国めたん")
 
