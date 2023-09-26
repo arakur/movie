@@ -8,10 +8,10 @@ type Subtitle =
       FontSize: float<pt>
       FontWeight: Typst.Weight
       FontFamily: string
-      X: int<pt>
-      Y: int<pt>
-      Width: int<pt>
-      Height: int<pt> }
+      X: int<px>
+      Y: int<px>
+      Width: int<px>
+      Height: int<px> }
 
 type FrameAppearance =
     { Appearance: Appearance.Appearance

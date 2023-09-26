@@ -34,9 +34,9 @@ type FrameOutput =
 
                 let content: Typst.TypstSource =
                     { Page =
-                        { Width = float speech.Subtitle.Width |> pt.ofFloat
-                          Height = float speech.Subtitle.Height |> pt.ofFloat
-                          Margin = speech.Subtitle.FontSize * 0.5 }
+                        { Width = px.asFloatPx speech.Subtitle.Width * pt.perPx
+                          Height = px.asFloatPx speech.Subtitle.Height * pt.perPx
+                          Margin = speech.Subtitle.FontSize * 0.5 } // TODO: Magic number.
                       Text =
                         { Size = speech.Subtitle.FontSize
                           Weight = speech.Subtitle.FontWeight
@@ -50,11 +50,11 @@ type FrameOutput =
                         magick
                             .Start(
                                 sprintf
-                                    "convert -density %d %s -resize %dx%d ( +clone -channel RGB -negate +channel -blur 0x10 ) +swap -background none -flatten %s"
-                                    300
+                                    "convert %s -bordercolor none -border %d -background %s -alpha background -channel A -blur 0x1 -level 0,%f%% %s"
                                     typstOut
-                                    speech.Subtitle.Width
-                                    speech.Subtitle.Height
+                                    10 // TODO: Magic number.
+                                    "black" // TODO: Make configurable.
+                                    0.1 // TODO: Magic number.
                                     subtitleFile
                             )
                             .WaitForExitAsync()
@@ -141,7 +141,7 @@ type FrameOutput =
 
                 let mutable prevV = backgroundV
 
-                for frame, frameNodeV in Seq.zip frameOutputs frameNodesV do
+                for frame in frameOutputs do
                     let! currentV = innerNode
 
                     let! apps =

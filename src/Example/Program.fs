@@ -41,10 +41,10 @@ let subtitle =
     {| Size = 50.0<pt>
        Weight = Bold
        Family = "Noto Sans CJK JP"
-       X = 400<pt>
-       Y = 700<pt>
-       Width = 1000<pt>
-       Height = 300<pt> |}
+       X = 400<px>
+       Y = 700<px>
+       Width = 1000<px>
+       Height = 300<px> |}
 
 let color =
     {| 春日部つむぎ = RGB(251, 202, 77)
