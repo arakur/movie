@@ -201,8 +201,4 @@ type FrameOutput =
             }
             |> FilterComplexStateM.build [ Arg.KV("pix_fmt", "yuv420p") ] output
 
-        // let graphViz = arguments.FilterComplex.Value.ToGraphVizDot() // DEBUG
-
-        // System.IO.File.WriteAllText("tmp/filter_complex.dot", graphViz) // DEBUG
-
         ffmpeg.StartProcess arguments
