@@ -14,13 +14,18 @@ type FrameOutput =
       Arrangements: AppearanceArrangement list
       SubtitlePosition: {| X: int; Y: int |} }
 
-    static member framesToOutput (typst: string) (magick: ImageMagick.ImageMagick) (frames: Frame list) =
+    static member framesToOutput
+        (typst: string)
+        (magick: ImageMagick.ImageMagick)
+        (voicevox: Voicevox.Voicevox)
+        (frames: Frame list)
+        =
         let subtitleFiles: string list =
             frames |> List.mapi (fun i _ -> i) |> List.map (sprintf "tmp/subtitle_%d.png")
 
-        let subtitleFilesTask =
+        let subtitleTasks =
             Seq.zip frames subtitleFiles
-            |> Seq.iteri (fun i (speech, subtitleFile) ->
+            |> Seq.mapi (fun i (speech, subtitleFile) ->
                 let typstSrc = sprintf "tmp/typst_src%d.typ" i
                 let typstOut = sprintf "tmp/typst_out%d.pdf" i
 
@@ -34,38 +39,45 @@ type FrameOutput =
                         speech.Subtitle.FontColor
                         speech.Subtitle.Text
 
-                System.IO.File.WriteAllText(typstSrc, content)
+                task {
+                    do! System.IO.File.WriteAllTextAsync(typstSrc, content)
 
-                let typstProc =
-                    System.Diagnostics.Process.Start(typst, sprintf "compile %s %s" typstSrc typstOut)
+                    do!
+                        System.Diagnostics.Process
+                            .Start(typst, sprintf "compile %s %s" typstSrc typstOut)
+                            .WaitForExitAsync()
 
-                let magickProc =
-                    magick.Start(
-                        sprintf
-                            "convert -density %d %s -resize %dx%d ( +clone -channel RGB -negate +channel -blur 0x10 ) +swap -background none -flatten %s"
-                            300
-                            typstOut
-                            speech.Subtitle.Width
-                            speech.Subtitle.Height
-                            subtitleFile
-                    )
-
-                typstProc.WaitForExitAsync() |> Async.AwaitTask |> Async.RunSynchronously
-                magickProc.WaitForExitAsync() |> Async.AwaitTask |> Async.RunSynchronously)
+                    do!
+                        magick
+                            .Start(
+                                sprintf
+                                    "convert -density %d %s -resize %dx%d ( +clone -channel RGB -negate +channel -blur 0x10 ) +swap -background none -flatten %s"
+                                    300
+                                    typstOut
+                                    speech.Subtitle.Width
+                                    speech.Subtitle.Height
+                                    subtitleFile
+                            )
+                            .WaitForExitAsync()
+                })
+            |> Seq.toList
 
         let speechFiles: string list =
             frames |> List.mapi (fun i _ -> sprintf "tmp/voice_%d.wav" i)
 
-        do
-            use voicevox = new Voicevox.Voicevox()
+        let speechTask =
+            task {
+                for frame, speechFile in Seq.zip frames speechFiles do
+                    match voicevox.Synthesize frame.Speech with
+                    | Ok wav -> do! wav.SaveAsync(speechFile)
+                    | Error msg -> printfn "Error: %s" msg
+            }
 
-            for frame, speechFile in Seq.zip frames speechFiles do
-                printfn "%s" speechFile // DEBUG
-                printfn "speech %A" frame.Speech // DEBUG
-
-                match voicevox.Synthesize frame.Speech with
-                | Ok wav -> wav.Save(speechFile)
-                | Error msg -> printfn "Error: %s" msg
+        speechTask :: subtitleTasks
+        |> Seq.map (fun task -> task |> Async.AwaitTask)
+        |> Async.Parallel
+        |> Async.Ignore
+        |> Async.RunSynchronously
 
         //
 

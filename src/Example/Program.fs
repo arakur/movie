@@ -12,12 +12,6 @@ let unwrap<'a, 'b> (res: Result<'a, 'b>) : 'a =
 
 //
 
-let typst = "typst"
-
-let magick = ImageMagick("magick")
-
-let ffmpeg = FFmpeg("ffmpeg")
-
 //
 
 let 春日部つむぎ = Appearance.LoadDirectory("appearance/春日部つむぎ")
@@ -104,11 +98,31 @@ let frames: Frame.Frame list =
 
 //
 
-let frameOutputs = Frame.FrameOutput.framesToOutput typst magick frames
+do
+    let typst = "typst"
 
-let p =
-    Frame.FrameOutput.exportVideo ffmpeg "sample/sample-10s.mp4" frameOutputs "output/output.mp4"
+    let magick = ImageMagick("magick")
 
-let log = p.StandardError.ReadToEnd()
+    use voicevox = new Voicevox()
 
-printfn "%s" log
+    let ffmpeg = FFmpeg("ffmpeg")
+
+    //
+
+    let tmpDir = "tmp"
+
+    if System.IO.Directory.Exists(tmpDir) then
+        System.IO.Directory.Delete(tmpDir, true)
+
+    System.IO.Directory.CreateDirectory(tmpDir) |> ignore
+
+    //
+
+    let frameOutputs = Frame.FrameOutput.framesToOutput typst magick voicevox frames
+
+    let p =
+        Frame.FrameOutput.exportVideo ffmpeg "sample/sample-10s.mp4" frameOutputs "output/output.mp4"
+
+    let log = p.StandardError.ReadToEnd()
+
+    printfn "%s" log
