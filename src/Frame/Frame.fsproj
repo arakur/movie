@@ -6,6 +6,7 @@
   <ItemGroup>
     <Compile Include="Frame.fs" />
     <Compile Include="FrameOutput.fs" />
+    <Compile Include="MovieBuilder.fs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Voicevox\Voicevox.fsproj" />
@@ -13,6 +14,7 @@
     <ProjectReference Include="..\FFmpeg\FFmpeg.fsproj" />
     <ProjectReference Include="..\Typst\Typst.fsproj" />
     <ProjectReference Include="..\Measure\Measure.fsproj" />
+    <ProjectReference Include="..\Env\Env.fsproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="NAudio" Version="2.2.1" />

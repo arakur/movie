@@ -16,21 +16,18 @@ type FrameOutput =
       Arrangements: AppearanceArrangement list
       SubtitlePosition: {| X: int; Y: int |} }
 
-    static member framesToOutput
-        (typst: Typst.Typst)
-        (magick: ImageMagick.ImageMagick)
-        (voicevox: Voicevox.Voicevox)
-        (frames: Frame list)
-        =
+    static member framesToOutput (env: Env.Env) (frames: Frame list) =
         let subtitleFiles: string list =
-            frames |> List.mapi (fun i _ -> i) |> List.map (sprintf "tmp/subtitle_%d.png")
+            frames
+            |> List.mapi (fun i _ -> i)
+            |> List.map (sprintf "%s/subtitle_%d.png" env.TmpDir)
 
         let subtitleTasks =
             Seq.zip frames subtitleFiles
             |> Seq.mapi (fun i (speech, subtitleFile) ->
                 let uuid = System.Guid.NewGuid().ToString("N")
 
-                let typstOut = sprintf "tmp/typst_out_%s.pdf" uuid
+                let typstOut = sprintf "%s/typst_out_%s.pdf" env.TmpDir uuid
 
                 let content: Typst.TypstSource =
                     { Page =
@@ -44,10 +41,10 @@ type FrameOutput =
                       Content = speech.Subtitle.Text }
 
                 task {
-                    do! typst.CompileAsync(content, typstOut)
+                    do! env.Typst.CompileAsync(content, typstOut)
 
                     do!
-                        magick
+                        env.ImageMagick
                             .Start(
                                 sprintf
                                     "convert %s -bordercolor none -border %d -background %s -alpha background -channel A -blur 0x1 -level 0,%f%% %s"
@@ -62,12 +59,12 @@ type FrameOutput =
             |> Seq.toList
 
         let speechFiles: string list =
-            frames |> List.mapi (fun i _ -> sprintf "tmp/voice_%d.wav" i)
+            frames |> List.mapi (fun i _ -> sprintf "%s/voice_%d.wav" env.TmpDir i)
 
         let speechTask =
             task {
                 for frame, speechFile in Seq.zip frames speechFiles do
-                    match voicevox.Synthesize frame.Speech with
+                    match env.Voicevox.Synthesize frame.Speech with
                     | Ok wav -> do! wav.SaveAsync(speechFile)
                     | Error msg -> printfn "Error: %s" msg
             }
@@ -97,14 +94,14 @@ type FrameOutput =
             |> List.foldBack
                 (fun (frame: Frame) (map, count) ->
                     frame.FrameAppearances
-                    |> List.map (fun appearance -> appearance.Appearance)
-                    |> List.fold
+                    |> Seq.map (fun appearance -> appearance.Appearance)
+                    |> Seq.fold
                         (fun (map, count) appearance ->
                             match Map.tryFind appearance map with
                             | Some _ -> map, count
                             | None ->
-                                let path = sprintf "tmp/app_%d.png" count
-                                appearance.Write(magick, path).WaitForExit()
+                                let path = sprintf "%s/app_%d.png" env.TmpDir count
+                                appearance.Write(env.ImageMagick, path).WaitForExit()
                                 Map.add appearance path map, count + 1)
                         (map, count))
                 frames
@@ -117,10 +114,11 @@ type FrameOutput =
               Length = speechOutputs.[i].Length
               Arrangements =
                 frame.FrameAppearances
-                |> List.map (fun appearance ->
+                |> Seq.map (fun appearance ->
                     { Path = appearanceMap.[appearance.Appearance]
-                      X = appearance.X
-                      Y = appearance.Y })
+                      X = int appearance.X
+                      Y = int appearance.Y })
+                |> Seq.toList
               SubtitlePosition =
                 {| X = int frame.Subtitle.X
                    Y = int frame.Subtitle.Y |} })

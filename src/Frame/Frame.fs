@@ -15,8 +15,8 @@ type Subtitle =
 
 type FrameAppearance =
     { Appearance: Appearance.Appearance
-      X: int
-      Y: int }
+      X: int<px>
+      Y: int<px> }
 
 type Frame =
     { Speech: Voicevox.Speech
