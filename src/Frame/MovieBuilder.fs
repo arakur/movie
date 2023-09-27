@@ -4,7 +4,7 @@ open Measure
 open FSharpx.Collections
 
 type SpeakerState =
-    { Name: string
+    { SpeakerName: string
       SpeechStyle: string
       FontColor: Typst.Color
       FontFamily: string option
@@ -20,7 +20,7 @@ type SpeakerState =
     member this.WithTalk(talk: string) : Voicevox.Speech =
         { Voicevox.Talk = talk
           Voicevox.Style = this.SpeechStyle
-          Voicevox.Speaker = this.Name }
+          Voicevox.Speaker = this.SpeakerName }
 
 module SpeakerState =
     let hFlip (s: SpeakerState) =

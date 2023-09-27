@@ -21,7 +21,7 @@ let movieState =
 
         addSpeaker
             "春日部つむぎ"
-            { Name = "春日部つむぎ"
+            { SpeakerName = "春日部つむぎ"
               SpeechStyle = "ノーマル"
               FontColor = RGB(251, 202, 77)
               FontFamily = None
@@ -31,7 +31,7 @@ let movieState =
 
         addSpeaker
             "四国めたん"
-            { Name = "四国めたん"
+            { SpeakerName = "四国めたん"
               SpeechStyle = "ノーマル"
               FontColor = RGB(231, 96, 158)
               FontFamily = None
