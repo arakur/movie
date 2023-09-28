@@ -18,8 +18,8 @@ let movieState =
                   Weight = Bold
                   Family = "Noto Sans CJK JP" }
               Pos = { X = 400<px>; Y = 700<px> }
-              Size = { Width = 1000<px>; Height = 300<px> } }
-            (Background.File "sample/sample-10s.mp4")
+              Size = { Width = 1000<px>; Height = 300<px> }
+              Background = Background.File "sample/sample-10s.mp4" }
 
         addSpeaker
             "春日部つむぎ"

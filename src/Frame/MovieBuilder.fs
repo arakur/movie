@@ -105,17 +105,26 @@ type MovieState =
       Subtitle: SubtitleState
       Background: Background }
 
+type Initialize =
+    { Font: SubtitleFont
+      Pos: Pos
+      Size: Size
+      Background: Background }
+
 type MovieBuilder() =
 
     member __.Yield _ = ()
 
     [<CustomOperation "initialize">]
-    member __.Initialize(_: unit, subtitle: SubtitleState, background: Background) =
+    member __.Initialize(_: unit, initialize: Initialize) =
         { Frames = Deque.empty
           Speakers = Map.empty
           CurrentSpeaker = None
-          Subtitle = subtitle
-          Background = background }
+          Subtitle =
+            { Font = initialize.Font
+              Pos = initialize.Pos
+              Size = initialize.Size }
+          Background = initialize.Background }
 
     [<CustomOperation "addSpeaker">]
     member __.AddSpeaker(s: MovieState, name: Name, speaker: SpeakerState) =
