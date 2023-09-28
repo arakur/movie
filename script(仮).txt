@@ -1,10 +1,46 @@
+#initialize:
+  font:
+    color <- rgb(255, 255, 255)
+    size <- 50pt
+    weight <- bold
+    family <- "Noto Sans CJK JP"
+  pos:
+    X <- 400px
+    Y <- 700px
+  size:
+    Width <- 1000px
+    Height <- 300px
+  background <- sample/sample-10s.mp4
+
+#add-speaker 春日部つむぎ:
+  name <- 春日部つむぎ
+  style <- ノーマル
+  font:
+    color <- rgb(251, 202, 77)
+  appearance:
+    appearance <- appearance/春日部つむぎ
+    pos:
+      X <- 0px
+      Y <- 0px
+
+#add-speaker 四国めたん:
+  name <- 四国めたん
+  style <- ノーマル
+  font:
+    color <- rgb(231, 96, 158)
+  appearance:
+    appearance <- appearance/四国めたん
+    pos:
+      X <- 800px
+      Y <- 0px
+
 春日部つむぎ:
   モナドは単なる自己{関手|かんしゅ}の圏におけるモノイド対象だよ．
-  #set 立ち絵:
+  #set-立ち絵:
     ほっぺ.かげり <- On
     目.基本セット.黒目.目逸らし <- On
   何か問題でも？
 四国めたん:
-  #set 立ち絵:
+  #set-立ち絵:
     白ロリ服.左腕.口元に指 <- On
   おっそうだな．
