@@ -6,4 +6,7 @@
   <ItemGroup>
     <Compile Include="Types.fs" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Measure\Measure.fsproj" />
+  </ItemGroup>
 </Project>

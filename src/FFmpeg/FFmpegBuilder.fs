@@ -193,8 +193,7 @@ module FFmpegBuilder =
         yieldFilter (Filter.Create "null" [] [ input ] [ output ])
 
     type Layer =
-        { X: int
-          Y: int
+        { Pos: Pos
           Duration: (float * float) option
           Input: Node
           Shortest: bool }
@@ -209,8 +208,8 @@ module FFmpegBuilder =
                             if layer.Shortest then
                                 yield FArg.KV("shortest", "1")
 
-                            yield FArg.KV("x", layer.X.ToString())
-                            yield FArg.KV("y", layer.Y.ToString())
+                            yield FArg.KV("x", layer.Pos.X.ToString())
+                            yield FArg.KV("y", layer.Pos.Y.ToString())
 
                             yield!
                                 layer.Duration

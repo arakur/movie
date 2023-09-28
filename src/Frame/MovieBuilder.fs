@@ -7,67 +7,84 @@ open FSharpx.Collections
 
 type Name = string
 
-type SpeakerState =
-    { SpeakerName: Name
-      SpeechStyle: string
-      FontColor: Color
-      FontFamily: string option
-      Appearance: Appearance.Appearance
-      AppearanceX: int<px>
-      AppearanceY: int<px> }
+type SpeakerFont(?color: Color, ?size: float<pt>, ?weight: Typst.Weight, ?family: string) =
+    member val Color = color with get
+    member val Size = size with get
+    member val Weight = weight with get
+    member val Family = family with get
 
-    member this.FrameAppearance =
-        { Appearance = this.Appearance
-          X = this.AppearanceX
-          Y = this.AppearanceY }
+    member this.WithColor(color: Color) =
+        SpeakerFont(color = color, ?size = this.Size, ?weight = this.Weight, ?family = this.Family)
+
+    member this.WithColorRGB(r: int, g: int, b: int) = this.WithColor(RGB(r, g, b))
+
+    member this.WithColorRGBA(r: int, g: int, b: int, a: int) = this.WithColor(RGBA(r, g, b, a))
+
+    member this.WithSize(size: float<pt>) =
+        SpeakerFont(?color = this.Color, size = size, ?weight = this.Weight, ?family = this.Family)
+
+    member this.WithWeight(weight: Typst.Weight) =
+        SpeakerFont(?color = this.Color, ?size = this.Size, weight = weight, ?family = this.Family)
+
+    member this.WithFamily(family: string) =
+        SpeakerFont(?color = this.Color, ?size = this.Size, ?weight = this.Weight, family = family)
+
+    member this.DefaultWith(subtitleFont: SubtitleFont) =
+        { Color = this.Color |> Option.defaultValue subtitleFont.Color
+          Size = this.Size |> Option.defaultValue subtitleFont.Size
+          Weight = this.Weight |> Option.defaultValue subtitleFont.Weight
+          Family = this.Family |> Option.defaultValue subtitleFont.Family }
+
+type SpeakerState =
+    { Name: Name
+      Style: string
+      Font: SpeakerFont
+      Appearance: FrameAppearance }
 
     member this.WithTalk(talk: string) : Voicevox.Speech =
         { Voicevox.Talk = talk
-          Voicevox.Style = this.SpeechStyle
-          Voicevox.Speaker = this.SpeakerName }
+          Voicevox.Style = this.Style
+          Voicevox.Speaker = this.Name }
 
 module SpeakerState =
     let hFlip (s: SpeakerState) =
         { s with
-            Appearance = Appearance.Appearance.hFlip s.Appearance }
+            Appearance =
+                { s.Appearance with
+                    Appearance = Appearance.Appearance.hFlip s.Appearance.Appearance } }
 
     let turnOn (path: string list) (s: SpeakerState) =
         { s with
             Appearance =
-                s.Appearance
-                |> Appearance.Appearance.tryTurnOn path
-                |> function
-                    | Ok a -> a
-                    | Error msg -> failwith (msg.ToString()) }
+                { s.Appearance with
+                    Appearance =
+                        s.Appearance.Appearance
+                        |> Appearance.Appearance.tryTurnOn path
+                        |> function
+                            | Ok a -> a
+                            | Error msg -> failwith (msg.ToString()) } }
 
     let turnOff (path: string list) (s: SpeakerState) =
         { s with
             Appearance =
-                s.Appearance
-                |> Appearance.Appearance.tryTurnOff path
-                |> function
-                    | Ok a -> a
-                    | Error msg -> failwith (msg.ToString()) }
+                { s.Appearance with
+                    Appearance =
+                        s.Appearance.Appearance
+                        |> Appearance.Appearance.tryTurnOff path
+                        |> function
+                            | Ok a -> a
+                            | Error msg -> failwith (msg.ToString()) } }
 
 type SubtitleState =
-    { FontSize: float<pt>
-      FontWeight: Typst.Weight
-      FontFamily: string
-      X: int<px>
-      Y: int<px>
-      Width: int<px>
-      Height: int<px> }
+    { Font: SubtitleFont
+      Pos: Pos
+      Size: Size }
 
-    member this.WithText(text: string, color: Color) =
+    member this.WithText(text: string, speakerFont: SpeakerFont) =
         { Text = text
-          FontColor = color
-          FontSize = this.FontSize
-          FontWeight = this.FontWeight
-          FontFamily = this.FontFamily
-          X = this.X
-          Y = this.Y
-          Width = this.Width
-          Height = this.Height }
+          Font = speakerFont.DefaultWith this.Font
+          Pos = this.Pos
+          Size = this.Size }
 
 [<RequireQualifiedAccess>]
 type Background =
@@ -77,11 +94,9 @@ type Background =
     member this.ToFFmpegInput =
         match this with
         | File path -> sprintf "\"%s\"" path
-        | Color color ->
-            // TODO: ちゃんと書く
-            match color with
-            | RGB(r, g, b) -> sprintf "color=%d:%d:%d" r g b
-            | RGBA(r, g, b, a) -> sprintf "color=%d:%d:%d:%d" r g b a
+        | Color _color ->
+            // TODO: Implement this.
+            failwith "TODO: color background is not implemented yet."
 
 type MovieState =
     { Frames: Frame Deque
@@ -130,9 +145,9 @@ type MovieBuilder() =
         let speech = speaker.WithTalk(speechText |> Option.defaultValue subtitleText)
 
         let frameAppearances =
-            s.Speakers |> Seq.map (fun kv -> kv.Value.FrameAppearance) |> Seq.toList
+            s.Speakers |> Seq.map (fun kv -> kv.Value.Appearance) |> Seq.toList
 
-        let subtitle = s.Subtitle.WithText(subtitleText, speaker.FontColor)
+        let subtitle = s.Subtitle.WithText(subtitleText, speaker.Font)
 
         let frame =
             { Speech = speech

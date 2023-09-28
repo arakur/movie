@@ -3,21 +3,21 @@
 open Measure
 open Types
 
+type SubtitleFont =
+    { Color: Color
+      Size: float<pt>
+      Weight: Typst.Weight
+      Family: string }
+
 type Subtitle =
     { Text: string
-      FontColor: Color
-      FontSize: float<pt>
-      FontWeight: Typst.Weight
-      FontFamily: string
-      X: int<px>
-      Y: int<px>
-      Width: int<px>
-      Height: int<px> }
+      Font: SubtitleFont
+      Pos: Pos
+      Size: Size }
 
 type FrameAppearance =
     { Appearance: Appearance.Appearance
-      X: int<px>
-      Y: int<px> }
+      Pos: Pos }
 
 type Frame =
     { Speech: Voicevox.Speech

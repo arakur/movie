@@ -11,5 +11,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Types\Types.fsproj" />
+    <ProjectReference Include="..\Measure\Measure.fsproj" />
   </ItemGroup>
 </Project>

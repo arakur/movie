@@ -8,17 +8,17 @@ open FFmpeg.FFmpegBuilder
 
 open NAudio
 
-type AppearanceArrangement = { Path: Path; X: int; Y: int }
+type AppearanceArrangement = { Path: Path; Pos: Pos }
 
 type FrameOutput =
     { VoiceFile: Path
       SubtitleFile: Path
       Length: float
       Arrangements: AppearanceArrangement list
-      SubtitlePosition: {| X: int; Y: int |} }
+      Pos: Pos }
 
     static member framesToOutput (env: Env.Env) (frames: Frame list) =
-        let subtitleFiles: Path list = 
+        let subtitleFiles: Path list =
             frames
             |> List.mapi (fun i _ -> i)
             |> List.map (sprintf "%s/subtitle_%d.png" env.TmpDir)
@@ -32,13 +32,13 @@ type FrameOutput =
 
                 let content: Typst.TypstSource =
                     { Page =
-                        { Width = px.asFloatPx speech.Subtitle.Width * pt.perPx
-                          Height = px.asFloatPx speech.Subtitle.Height * pt.perPx
-                          Margin = speech.Subtitle.FontSize * 0.5 } // TODO: Magic number.
+                        { Width = px.asFloatPx speech.Subtitle.Size.Width * pt.perPx
+                          Height = px.asFloatPx speech.Subtitle.Size.Height * pt.perPx
+                          Margin = speech.Subtitle.Font.Size * 0.5 } // TODO: Magic number.
                       Text =
-                        { Size = speech.Subtitle.FontSize
-                          Weight = speech.Subtitle.FontWeight
-                          Fill = speech.Subtitle.FontColor }
+                        { Size = speech.Subtitle.Font.Size
+                          Weight = speech.Subtitle.Font.Weight
+                          Fill = speech.Subtitle.Font.Color }
                       Content = speech.Subtitle.Text }
 
                 task {
@@ -117,12 +117,9 @@ type FrameOutput =
                 frame.FrameAppearances
                 |> Seq.map (fun appearance ->
                     { Path = appearanceMap.[appearance.Appearance]
-                      X = int appearance.X
-                      Y = int appearance.Y })
+                      Pos = appearance.Pos })
                 |> Seq.toList
-              SubtitlePosition =
-                {| X = int frame.Subtitle.X
-                   Y = int frame.Subtitle.Y |} })
+              Pos = frame.Subtitle.Pos })
 
     static member exportVideo (ffmpeg: FFmpeg) (background: Path) (frameOutputs: FrameOutput list) (output: Path) =
         let arguments =
@@ -154,8 +151,7 @@ type FrameOutput =
                     let layers =
                         frame.Arrangements
                         |> List.mapi (fun i arr ->
-                            { X = arr.X
-                              Y = arr.Y
+                            { Pos = arr.Pos
                               Duration = Some duration
                               Input = apps.[i]
                               Shortest = false })
@@ -163,8 +159,7 @@ type FrameOutput =
                     let! subtitle = inputNode frame.SubtitleFile
 
                     let subtitleLayer =
-                        { X = frame.SubtitlePosition.X
-                          Y = frame.SubtitlePosition.Y
+                        { Pos = frame.Pos
                           Duration = Some duration
                           Input = subtitle.VInput
                           Shortest = false }
