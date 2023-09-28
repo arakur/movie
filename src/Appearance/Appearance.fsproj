@@ -16,5 +16,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\ImageMagick\ImageMagick.fsproj" />
+    <ProjectReference Include="..\Types\Types.fsproj" />
   </ItemGroup>
 </Project>

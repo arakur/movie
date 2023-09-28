@@ -1,23 +1,24 @@
 namespace Frame
 
 open Measure
+open Types
 
 open FFmpeg
 open FFmpeg.FFmpegBuilder
 
 open NAudio
 
-type AppearanceArrangement = { Path: string; X: int; Y: int }
+type AppearanceArrangement = { Path: Path; X: int; Y: int }
 
 type FrameOutput =
-    { VoiceFile: string
-      SubtitleFile: string
+    { VoiceFile: Path
+      SubtitleFile: Path
       Length: float
       Arrangements: AppearanceArrangement list
       SubtitlePosition: {| X: int; Y: int |} }
 
     static member framesToOutput (env: Env.Env) (frames: Frame list) =
-        let subtitleFiles: string list =
+        let subtitleFiles: Path list = 
             frames
             |> List.mapi (fun i _ -> i)
             |> List.map (sprintf "%s/subtitle_%d.png" env.TmpDir)
@@ -58,7 +59,7 @@ type FrameOutput =
                 })
             |> Seq.toList
 
-        let speechFiles: string list =
+        let speechFiles: Path list =
             frames |> List.mapi (fun i _ -> sprintf "%s/voice_%d.wav" env.TmpDir i)
 
         let speechTask =
@@ -123,7 +124,7 @@ type FrameOutput =
                 {| X = int frame.Subtitle.X
                    Y = int frame.Subtitle.Y |} })
 
-    static member exportVideo (ffmpeg: FFmpeg) (background: string) (frameOutputs: FrameOutput list) (output: string) =
+    static member exportVideo (ffmpeg: FFmpeg) (background: Path) (frameOutputs: FrameOutput list) (output: Path) =
         let arguments =
             builder {
                 let! frameNodesV = innerNodeN frameOutputs.Length

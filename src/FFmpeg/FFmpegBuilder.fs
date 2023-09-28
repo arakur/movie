@@ -1,7 +1,9 @@
 namespace FFmpeg
 
+open Types
+
 type FFmpegBuilderState =
-    { Inputs: string list
+    { Inputs: Path list
       Filters: Filter list
       Mappings: Node list
       InnerNodeIndex: int }
@@ -34,7 +36,7 @@ module FilterComplexStateM =
             let (a, s') = m s
             run (f a) s')
 
-    let build (args: Arg list) (output: string) (FFmpegStateM m) : FFmpegArguments =
+    let build (args: Arg list) (output: Path) (FFmpegStateM m) : FFmpegArguments =
         let (_, s) =
             m
                 { Inputs = []

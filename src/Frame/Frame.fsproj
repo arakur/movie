@@ -9,6 +9,7 @@
     <Compile Include="MovieBuilder.fs" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Types\Types.fsproj" />
     <ProjectReference Include="..\Voicevox\Voicevox.fsproj" />
     <ProjectReference Include="..\Appearance\Appearance.fsproj" />
     <ProjectReference Include="..\FFmpeg\FFmpeg.fsproj" />

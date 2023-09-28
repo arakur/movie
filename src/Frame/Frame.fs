@@ -1,10 +1,11 @@
 ﻿namespace Frame
 
 open Measure
+open Types
 
 type Subtitle =
     { Text: string
-      FontColor: Typst.Color
+      FontColor: Color
       FontSize: float<pt>
       FontWeight: Typst.Weight
       FontFamily: string

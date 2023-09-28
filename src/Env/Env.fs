@@ -1,6 +1,8 @@
 ﻿namespace Env
 
-type Env(tmpDir: string, ?typst: string, ?imageMagick: string, ?ffmpeg: string) =
+open Types
+
+type Env(tmpDir: Path, ?typst: Path, ?imageMagick: Path, ?ffmpeg: Path) =
     let voicevox = new Voicevox.Voicevox()
     do System.IO.Directory.CreateDirectory(tmpDir) |> ignore
 

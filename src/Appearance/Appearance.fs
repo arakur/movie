@@ -6,9 +6,11 @@ open FSharpPlus
 open ImageMagick
 open FSharpPlus.Data
 
+open Types
+
 type Appearance =
     { Data: AppearanceData
-      Path: string
+      Path: Path
       X: int
       Y: int
       FlipX: bool
@@ -21,7 +23,7 @@ type Appearance =
         | false, true -> Flip.Y
         | true, true -> Flip.XY
 
-    static member LoadDirectory(path: string) =
+    static member LoadDirectory(path: Path) =
         let layerFilePath = path + "/appearance.json"
         let layerFile = System.IO.File.ReadAllText(layerFilePath)
 
@@ -58,7 +60,7 @@ type Appearance =
 
     static member tryTurnOff (path: string list) (appearance: Appearance) = appearance.TryTurnOff path
 
-    member this.Write(magick: ImageMagick, outputTo: string) =
+    member this.Write(magick: ImageMagick, outputTo: Path) =
         let rec collectLayerForFlip (layerForFlip: LayerForFlip) =
             seq {
                 let layer = layerForFlip.get this.Flip
@@ -115,5 +117,5 @@ type Appearance =
 
         magick.Start(arguments)
 
-    static member write (magick: ImageMagick) (outputTo: string) (appearance: Appearance) =
+    static member write (magick: ImageMagick) (outputTo: Path) (appearance: Appearance) =
         appearance.Write(magick, outputTo)

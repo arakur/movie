@@ -1,4 +1,5 @@
 ﻿open Measure
+open Types
 open Appearance
 open Typst
 open Env
@@ -18,6 +19,7 @@ let movieState =
               Y = 700<px>
               Width = 1000<px>
               Height = 300<px> }
+            (Background.File "sample/sample-10s.mp4")
 
         addSpeaker
             "春日部つむぎ"
@@ -64,7 +66,7 @@ let movieState =
 
 //
 
-let background = "sample/sample-10s.mp4"
+let output = "output/output.mp4"
 
 do
     printfn "Ready for rendering..."
@@ -73,7 +75,7 @@ do
 
     printfn "Rendering..."
 
-    let p = compose env background movieState
+    let p = compose env movieState output
 
     let log = p.StandardError.ReadToEnd()
 

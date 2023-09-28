@@ -9,4 +9,7 @@
     <Compile Include="FFmpeg.fs" />
     <Compile Include="FFmpegBuilder.fs" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Types\Types.fsproj" />
+  </ItemGroup>
 </Project>

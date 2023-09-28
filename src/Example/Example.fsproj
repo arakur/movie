@@ -19,6 +19,7 @@
     <ProjectReference Include="..\Frame\Frame.fsproj" />
     <ProjectReference Include="..\Typst\Typst.fsproj" />
     <ProjectReference Include="..\Measure\Measure.fsproj" />
+    <ProjectReference Include="..\Types\Types.fsproj" />
   </ItemGroup>
 
   <ItemGroup>

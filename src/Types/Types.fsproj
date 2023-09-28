@@ -4,10 +4,6 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="Typst.fs" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\Measure\Measure.fsproj" />
-    <ProjectReference Include="..\Types\Types.fsproj" />
+    <Compile Include="Types.fs" />
   </ItemGroup>
 </Project>

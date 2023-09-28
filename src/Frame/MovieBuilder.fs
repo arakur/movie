@@ -1,12 +1,16 @@
 namespace Frame
 
 open Measure
+open Types
+
 open FSharpx.Collections
 
+type Name = string
+
 type SpeakerState =
-    { SpeakerName: string
+    { SpeakerName: Name
       SpeechStyle: string
-      FontColor: Typst.Color
+      FontColor: Color
       FontFamily: string option
       Appearance: Appearance.Appearance
       AppearanceX: int<px>
@@ -54,7 +58,7 @@ type SubtitleState =
       Width: int<px>
       Height: int<px> }
 
-    member this.WithText(text: string, color: Typst.Color) =
+    member this.WithText(text: string, color: Color) =
         { Text = text
           FontColor = color
           FontSize = this.FontSize
@@ -65,33 +69,49 @@ type SubtitleState =
           Width = this.Width
           Height = this.Height }
 
+[<RequireQualifiedAccess>]
+type Background =
+    | File of string
+    | Color of Color
+
+    member this.ToFFmpegInput =
+        match this with
+        | File path -> sprintf "\"%s\"" path
+        | Color color ->
+            // TODO: ちゃんと書く
+            match color with
+            | RGB(r, g, b) -> sprintf "color=%d:%d:%d" r g b
+            | RGBA(r, g, b, a) -> sprintf "color=%d:%d:%d:%d" r g b a
+
 type MovieState =
     { Frames: Frame Deque
-      Speakers: Map<string, SpeakerState>
-      CurrentSpeaker: string option
-      Subtitle: SubtitleState }
+      Speakers: Map<Name, SpeakerState>
+      CurrentSpeaker: Name option
+      Subtitle: SubtitleState
+      Background: Background }
 
 type MovieBuilder() =
 
     member __.Yield _ = ()
 
     [<CustomOperation "initialize">]
-    member __.Initialize(_: unit, subtitle: SubtitleState) =
+    member __.Initialize(_: unit, subtitle: SubtitleState, background: Background) =
         { Frames = Deque.empty
           Speakers = Map.empty
           CurrentSpeaker = None
-          Subtitle = subtitle }
+          Subtitle = subtitle
+          Background = background }
 
     [<CustomOperation "addSpeaker">]
-    member __.AddSpeaker(s: MovieState, name: string, speaker: SpeakerState) =
+    member __.AddSpeaker(s: MovieState, name: Name, speaker: SpeakerState) =
         { s with
             Speakers = s.Speakers.Add(name, speaker) }
 
     [<CustomOperation "speaker">]
-    member __.SetSpeaker(s: MovieState, name: string) = { s with CurrentSpeaker = Some name }
+    member __.SetSpeaker(s: MovieState, name: Name) = { s with CurrentSpeaker = Some name }
 
     [<CustomOperation "modify">]
-    member __.ModifySpeaker(s: MovieState, name: string, f: SpeakerState -> SpeakerState) =
+    member __.ModifySpeaker(s: MovieState, name: Name, f: SpeakerState -> SpeakerState) =
         { s with
             Speakers = s.Speakers.Add(name, f s.Speakers.[name]) }
 
@@ -104,7 +124,7 @@ type MovieBuilder() =
         this.ModifySpeaker(s, name, f)
 
     [<CustomOperation "talk">]
-    member __.YieldFrame(s: MovieState, name: string, subtitleText: string, ?speechText: string) =
+    member __.YieldFrame(s: MovieState, name: Name, subtitleText: string, ?speechText: string) =
         let speaker = s.Speakers.[name]
 
         let speech = speaker.WithTalk(speechText |> Option.defaultValue subtitleText)
@@ -132,7 +152,7 @@ type MovieBuilder() =
 module MovieBuilder =
     let movie = MovieBuilder()
 
-    let compose (env: Env.Env) (background: string) (state: MovieState) =
+    let compose (env: Env.Env) (state: MovieState) (output: Path) =
         let frameOutputs = FrameOutput.framesToOutput env (state.Frames |> Seq.toList)
 
-        FrameOutput.exportVideo env.FFmpeg background frameOutputs "output/output.mp4"
+        FrameOutput.exportVideo env.FFmpeg state.Background.ToFFmpegInput frameOutputs output

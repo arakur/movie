@@ -1,9 +1,11 @@
 namespace Appearance
 
 open FSharpx.Collections
-open LayersRaw
-open LayersRaw
 open FSharpPlus
+
+open Types
+
+open LayersRaw
 
 [<RequireQualifiedAccess>]
 type Flip =
@@ -34,7 +36,7 @@ type Layer =
       Left: int
       Top: int
       Children: Children
-      Path: string }
+      Path: Path }
 
 and LayerForFlip =
     { None: Layer option

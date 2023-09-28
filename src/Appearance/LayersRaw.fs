@@ -1,8 +1,8 @@
 module Appearance.LayersRaw
 
 open FSharp.Json
-open FSharpx.Collections
 open System.Text.RegularExpressions
+open Types
 
 type Flip =
     | [<JsonUnionCase("flipx")>] FlipX
@@ -35,7 +35,7 @@ type Layer =
       [<JsonField("children")>]
       Children: Layers
       [<JsonField("path")>]
-      Path: string }
+      Path: Path }
 
     member this.Name = Regex.Replace(this.RawName, "[0-9]+_", "")
 

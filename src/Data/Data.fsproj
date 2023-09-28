@@ -6,4 +6,7 @@
   <ItemGroup>
     <Compile Include="Wav.fs" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Types\Types.fsproj" />
+  </ItemGroup>
 </Project>
