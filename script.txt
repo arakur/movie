@@ -1,6 +1,11 @@
 #initialize:
   font:
-    color <- rgb(255, 255, 255)
+    color <-
+      rgb(
+        255,
+        255,
+        255
+      )
     size <- 50pt
     weight <- bold
     family <- "Noto Sans CJK JP"
@@ -11,7 +16,7 @@
 #add-speaker 春日部つむぎ:
   name <- 春日部つむぎ
   style <- ノーマル
-  font: color <- rgb(251, 202, 77)
+  font: color <- #rgb(251, 202, 77)
   appearance:
     appearance <- appearance/春日部つむぎ
     pos: X <- 0px; Y <- 0px
@@ -19,20 +24,26 @@
 #add-speaker 四国めたん:
   name <- 四国めたん
   style <- ノーマル
-  font: color <- rgb(231, 96, 158)
+  font: color <- #rgb(231, 96, 158)
   appearance:
     appearance <- appearance/四国めたん
-    pos: X <- 800px; Y <- 0px
+    pos:  X <- 800px
+          Y <- 0px
+
+@ 四国めたん:
+  #立ち絵:
+    #on 白ロリ服/左腕/普通
 
 // コメント
 
 @ 春日部つむぎ:
-  > モナドは単なる自己{関手|かんしゅ}の圏におけるモノイド対象だよ．
-  #set-立ち絵:
-    #on ほっぺ.かげり
-    #on 目.基本セット.黒目.目逸らし
+  > モナドは単なる自己{関手|かんしゅ}の // コメント
+    圏におけるモノイド対象だよ．
+  #立ち絵:
+    #on ほっぺ/かげり
+    #on 目/基本セット/黒目/目逸らし
   > 何か問題でも？
 @ 四国めたん:
-  #set-立ち絵:
-    #on 白ロリ服.左腕.口元に指
+  #立ち絵:
+    #on 白ロリ服/左腕/口元に指
   > おっそうだな．

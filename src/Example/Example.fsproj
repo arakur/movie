@@ -20,6 +20,7 @@
     <ProjectReference Include="..\Typst\Typst.fsproj" />
     <ProjectReference Include="..\Measure\Measure.fsproj" />
     <ProjectReference Include="..\Types\Types.fsproj" />
+    <ProjectReference Include="..\Script\Script.fsproj" />
   </ItemGroup>
 
   <ItemGroup>
