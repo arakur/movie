@@ -181,7 +181,7 @@ module Lexer =
             lineContent |> String.drop 1 |> String.trimStart [ ' ' ] |> loop
 
         let readLine lineContent =
-            // Read next lines while the indents are monotonic and contain no colon:
+            // Read next lines while the indent is greater than the current indent and until the line contains a colon:
             // #this
             //   is
             //   a
@@ -192,8 +192,7 @@ module Lexer =
 
             let originalIndent = state.currentIndent
 
-            let rec loop currentIndent content =
-
+            let rec loop content =
                 let segments = content |> String.split [ ":" ]
                 let mutable currentSegment = segments |> Seq.head
                 let mutable segments' = []
@@ -216,7 +215,7 @@ module Lexer =
                         segments'.Tail |> Seq.last
 
                     seq {
-                        let mutable currentIndentSeq = [ currentIndent + String.length headSegment ]
+                        let mutable currentIndentSeq = [ originalIndent + String.length headSegment ]
 
                         yield! linesFrom headSegment
 
@@ -229,8 +228,8 @@ module Lexer =
 
                         yield Colon
 
-                        let currentIndent' = currentIndentSeq.Head + String.length lastSegment
-                        currentIndentSeq <- currentIndent' :: currentIndentSeq.Tail
+                        let currentIndent'' = currentIndentSeq.Head + String.length lastSegment
+                        currentIndentSeq <- currentIndent'' :: currentIndentSeq.Tail
 
                         let lastContent = lastSegment |> Line.content
 
@@ -261,14 +260,14 @@ module Lexer =
 
                         if nextContent = "" then
                             state.DropLine
-                            loop currentIndent content
-                        elif nextIndent < currentIndent then
+                            loop content
+                        elif nextIndent <= originalIndent then
                             seq { yield! linesFrom content }
                         else
                             state.DropLine
-                            loop nextIndent (content + " " + nextContent)
+                            loop (content + " " + nextContent)
 
-            loop (originalIndent + 1) lineContent
+            loop lineContent
 
         let readOnce () =
             let line = state.PopLine
