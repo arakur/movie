@@ -8,6 +8,7 @@ module Lexer =
 
     [<RequireQualifiedAccess>]
     type LineNode =
+        | Numeral of string * measure: string option
         | Variable of string
         | String of string
         | Word of string
@@ -95,10 +96,23 @@ module Lexer =
           '~' ]
 
     let private linesFrom (source: string) : Node seq =
+        let parseNumeral: Parser<LineNode, unit> =
+            let sign: Parser<string, unit> = pchar '-' <|> pchar '+' |>> (fun c -> c.ToString())
+
+            let digits: Parser<string, unit> = many1 digit |>> String.ofList
+            let dotDigits: Parser<string, unit> = pchar '.' >>. digits |>> (fun s -> "." + s)
+
+            let measure: Parser<string, unit> =
+                many (satisfy (fun c -> System.Char.IsAsciiLetter c || c = '%'))
+                |>> String.ofList
+
+            pipe4 (sign <|> pstring "") digits (dotDigits <|> pstring "") measure (fun s1 s2 s3 m ->
+                LineNode.Numeral(s1 + s2 + s3, (if m = "" then None else Some m)))
+
         let parseVariable: Parser<LineNode, unit> =
             let head = pchar '#'
             let rest = many1 (noneOf [ ' '; ':'; '('; ')' ])
-            pipe2 head rest (fun h r -> h :: r |> String.ofList |> LineNode.Variable)
+            pipe2 head rest (fun _h r -> r |> String.ofList |> LineNode.Variable)
 
         let parseString: Parser<LineNode, unit> =
             let escape = pstring "\\\"" >>% '\"'
@@ -126,7 +140,8 @@ module Lexer =
 
         let parseNode: Parser<LineNode, unit> =
             choice
-                [ parseVariable
+                [ parseNumeral
+                  parseVariable
                   parseString
                   parseWord
                   gets
