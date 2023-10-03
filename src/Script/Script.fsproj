@@ -5,6 +5,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Lexer.fs" />
+    <Compile Include="Parser.fs" />
     <Compile Include="Script.fs" />
   </ItemGroup>
   <ItemGroup>

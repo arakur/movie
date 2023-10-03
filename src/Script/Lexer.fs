@@ -2,7 +2,6 @@ namespace Script
 
 open FSharpPlus
 
-
 module Lexer =
     open FParsec
 
@@ -13,14 +12,20 @@ module Lexer =
         | String of string
         | Word of string
         | Gets
+        | At
+        | OtherOperator of string
         | OpenParen
         | CloseParen
-        | OtherOperator of string
+
+        member this.IsBinOp =
+            match this with
+            | Gets
+            | OtherOperator _ -> true
+            | _ -> false
 
     type Node =
         | Talk of string
         | Line of LineNode list
-        | Colon
         | BeginIndent
         | EndIndent
 
@@ -128,6 +133,8 @@ module Lexer =
 
         let gets: Parser<LineNode, unit> = pstring "<-" >>% LineNode.Gets
 
+        let at: Parser<LineNode, unit> = pstring "@" >>% LineNode.At
+
         let openParen: Parser<LineNode, unit> = pchar '(' >>% LineNode.OpenParen
 
         let closeParen: Parser<LineNode, unit> = pchar ')' >>% LineNode.CloseParen
@@ -145,6 +152,7 @@ module Lexer =
                   parseString
                   parseWord
                   gets
+                  at
                   openParen
                   closeParen
                   parseOperator ]
@@ -235,13 +243,11 @@ module Lexer =
                         yield! linesFrom headSegment
 
                         for segment in intermediateSegments do
-                            yield Colon
                             yield BeginIndent
+                            // FIXME: インデントがずれてしまうの出直す．
                             let currentIndent' = currentIndentSeq.Head + String.length segment
                             currentIndentSeq <- currentIndent' :: currentIndentSeq.Tail
                             yield! linesFrom segment
-
-                        yield Colon
 
                         let currentIndent'' = currentIndentSeq.Head + String.length lastSegment
                         currentIndentSeq <- currentIndent'' :: currentIndentSeq.Tail

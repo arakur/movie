@@ -7,8 +7,13 @@ let mutable indent = 0
 for line in lines do
     match line with
     | Script.Lexer.Node.Talk content -> printf "\n%sTEXT %s" (String.replicate indent " ") content
-    | Script.Lexer.Node.Line content -> printf "\n%sLINE %A" (String.replicate indent " ") content
-    | Script.Lexer.Node.Colon -> printf ":"
+    | Script.Lexer.Node.Line content ->
+        printf
+            "\n%sLINE %s"
+            (String.replicate indent " ")
+            (Script.Parser.Intermediate.initFrom content
+             |> Result.map (sprintf "%A")
+             |> Result.defaultWith (fun _ -> failwithf "PARSE ERROR: %A" content))
     | Script.Lexer.Node.BeginIndent ->
         printf "\n%sBEGIN INDENT" (String.replicate indent " ")
         indent <- indent + 2
