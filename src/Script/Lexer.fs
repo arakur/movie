@@ -13,13 +13,13 @@ module Lexer =
         | Word of string
         | Gets
         | At
+        | Comma
         | OtherOperator of string
         | OpenParen
         | CloseParen
 
         member this.IsBinOp =
             match this with
-            | Gets
             | OtherOperator _ -> true
             | _ -> false
 
@@ -135,6 +135,8 @@ module Lexer =
 
         let at: Parser<LineNode, unit> = pstring "@" >>% LineNode.At
 
+        let comma: Parser<LineNode, unit> = pchar ',' >>% LineNode.Comma
+
         let openParen: Parser<LineNode, unit> = pchar '(' >>% LineNode.OpenParen
 
         let closeParen: Parser<LineNode, unit> = pchar ')' >>% LineNode.CloseParen
@@ -147,18 +149,20 @@ module Lexer =
 
         let parseNode: Parser<LineNode, unit> =
             choice
-                [ parseNumeral
+                [ attempt parseNumeral
                   parseVariable
                   parseString
                   parseWord
                   gets
-                  at
+                  comma
                   openParen
                   closeParen
                   parseOperator ]
             .>> whiteSpace
 
-        let parseLine: Parser<LineNode list, unit> = many1 parseNode
+        let parseLine: Parser<LineNode list, unit> =
+            attempt (pipe2 at (many1 parseNode) (fun at nodes -> at :: nodes))
+            <|> many1 parseNode
 
         source
         |> String.split [ ";" ]
@@ -238,19 +242,31 @@ module Lexer =
                         segments'.Tail |> Seq.last
 
                     seq {
-                        let mutable currentIndentSeq = [ originalIndent + String.length headSegment ]
+                        printf "{%d}" originalIndent // DEBUG
+                        printf "{%s}" headSegment // DEBUG
+
+                        let mutable currentIndentSeq = [ originalIndent + String.length headSegment + 1 ]
 
                         yield! linesFrom headSegment
 
                         for segment in intermediateSegments do
                             yield BeginIndent
-                            // FIXME: インデントがずれてしまうの出直す．
-                            let currentIndent' = currentIndentSeq.Head + String.length segment
-                            currentIndentSeq <- currentIndent' :: currentIndentSeq.Tail
+
+                            // Number of leading spaces of the segment.
+                            let segmentSpaces = segment |> Line.indent
+
+                            // Position of colon following with the segment.
+                            let currentIndent' = currentIndentSeq.Head + String.length segment + 1
+
+                            // Shift the previous indentation with segmentSpaces and push currentIndent'.
+                            currentIndentSeq <-
+                                currentIndent' :: currentIndentSeq.Head + segmentSpaces :: currentIndentSeq.Tail
+
                             yield! linesFrom segment
 
-                        let currentIndent'' = currentIndentSeq.Head + String.length lastSegment
-                        currentIndentSeq <- currentIndent'' :: currentIndentSeq.Tail
+                        // The last segment has no following colon and so do only adding leading spaces to the previous indentation.
+                        let lastSpaces = lastSegment |> Line.indent
+                        currentIndentSeq <- currentIndentSeq.Head + lastSpaces :: currentIndentSeq.Tail
 
                         let lastContent = lastSegment |> Line.content
 
@@ -266,6 +282,8 @@ module Lexer =
                                     state.PushIndent nextIndent
                         else
                             // 最後のセグメントが空でないならば，この行で行われたインデントはすべて通常通りインデントされた扱いとなる．
+                            // FIXME: インデントがずれてしまうので直す．
+                            printf "{%A}" currentIndentSeq // DEBUG
                             currentIndentSeq |> Seq.rev |> Seq.iter state.PushIndent
                             // そして最後のセグメントを追加する．
                             yield BeginIndent

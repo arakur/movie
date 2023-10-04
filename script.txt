@@ -9,7 +9,7 @@
     size <- 50pt
     weight <- bold
     family <- "Noto Sans CJK JP"
-  pos: X <- 400px; Y <- 700px
+  pos: X <- 400px; Y <- 1px + 2px + 3px + 4px
   size: Width <- 1000px; Height <- 300px
   background <- sample/sample-10s.mp4
 
