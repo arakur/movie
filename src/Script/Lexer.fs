@@ -252,12 +252,14 @@ module Lexer =
                             // Number of leading spaces of the segment.
                             let segmentSpaces = segment |> Line.indent
 
+                            // Shift the previous indentation with segmentSpaces and push currentIndent'.
+                            currentIndentSeq <- currentIndentSeq.Head + segmentSpaces :: currentIndentSeq.Tail
+
                             // Position of colon following with the segment.
                             let currentIndent' = currentIndentSeq.Head + String.length segment + 1
 
                             // Shift the previous indentation with segmentSpaces and push currentIndent'.
-                            currentIndentSeq <-
-                                currentIndent' :: currentIndentSeq.Head + segmentSpaces :: currentIndentSeq.Tail
+                            currentIndentSeq <- currentIndent' :: currentIndentSeq
 
                             yield! linesFrom segment
 
