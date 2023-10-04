@@ -242,9 +242,6 @@ module Lexer =
                         segments'.Tail |> Seq.last
 
                     seq {
-                        printf "{%d}" originalIndent // DEBUG
-                        printf "{%s}" headSegment // DEBUG
-
                         let mutable currentIndentSeq = [ originalIndent + String.length headSegment + 1 ]
 
                         yield! linesFrom headSegment
@@ -282,8 +279,6 @@ module Lexer =
                                     state.PushIndent nextIndent
                         else
                             // 最後のセグメントが空でないならば，この行で行われたインデントはすべて通常通りインデントされた扱いとなる．
-                            // FIXME: インデントがずれてしまうので直す．
-                            printf "{%A}" currentIndentSeq // DEBUG
                             currentIndentSeq |> Seq.rev |> Seq.iter state.PushIndent
                             // そして最後のセグメントを追加する．
                             yield BeginIndent
