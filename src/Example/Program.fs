@@ -2,24 +2,28 @@
 
 let lines = Script.Lexer.nodesFrom script
 
-let mutable indent = 0
+// let mutable indent = 0
 
-for line in lines do
-    match line with
-    | Script.Lexer.Node.Talk content -> printf "\n%sTEXT %s" (String.replicate indent " ") content
-    | Script.Lexer.Node.Line content ->
-        printf
-            "\n%sLINE %s"
-            (String.replicate indent " ")
-            (Script.Parser.Intermediate.initFrom content
-             |> Result.map (sprintf "%A")
-             |> Result.defaultWith (fun _ -> failwithf "PARSE ERROR: %A" content))
-    | Script.Lexer.Node.BeginIndent ->
-        printf "\n%sBEGIN INDENT" (String.replicate indent " ")
-        indent <- indent + 2
-    | Script.Lexer.Node.EndIndent ->
-        indent <- indent - 2
-        printf "\n%sEND INDENT" (String.replicate indent " ")
+// // for line in lines do
+// //     match line with
+// //     | Script.Lexer.Node.Talk content -> printf "\n%sTEXT %s" (String.replicate indent " ") content
+// //     | Script.Lexer.Node.Line content ->
+// //         printf
+// //             "\n%sLINE %s"
+// //             (String.replicate indent " ")
+// //             (Script.Parser.Intermediate.initFrom content
+// //              |> Result.map (sprintf "%A")
+// //              |> Result.defaultWith (fun e -> failwithf "PARSE ERROR %A: %s" content e))
+// //     | Script.Lexer.Node.BeginIndent ->
+// //         printf "\n%sBEGIN INDENT" (String.replicate indent " ")
+// //         indent <- indent + 2
+// //     | Script.Lexer.Node.EndIndent ->
+// //         indent <- indent - 2
+// //         printf "\n%sEND INDENT" (String.replicate indent " ")
+
+let ast = Script.AST.AST.from (lines |> List.ofSeq)
+
+printfn "%A" ast
 
 //
 
