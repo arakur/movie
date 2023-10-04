@@ -4,7 +4,12 @@ module Parser =
     open FSharpPlus
 
     [<RequireQualifiedAccess>]
-    type BinOp = Other of string
+    type BinOp =
+        | Other of string
+
+        member this.Name =
+            match this with
+            | Other s -> s
 
     [<RequireQualifiedAccess>]
     type IntermediateExpr =
@@ -155,22 +160,13 @@ module Parser =
                     | _, rest -> Error(sprintf "Unexpected: %A." rest)))
             |> Result.bindError (fun _ -> parseGets line)
 
-module AST =
-    open FSharpPlus
-
-    [<RequireQualifiedAccess>]
-    type BinOp =
-        | Other of string
-
-        static member from(binOp: Parser.BinOp) =
-            match binOp with
-            | Parser.BinOp.Other s -> Other s
-
     [<RequireQualifiedAccess>]
     type Associativity =
         | Left
         | Right
         | None
+
+    type Talk = { Subtitle: string; Speech: string }
 
     [<RequireQualifiedAccess>]
     type Expr =
@@ -181,12 +177,12 @@ module AST =
         | BinOp of BinOp * Expr * Expr
         | Tuple of Expr list
 
-        static member tryFrom(intermediate: Parser.IntermediateExpr) =
+        static member tryFrom(intermediate: IntermediateExpr) =
             match intermediate with
-            | Parser.IntermediateExpr.Numeral(value, measure) -> Ok(Numeral(value, measure))
-            | Parser.IntermediateExpr.String(value) -> Ok(String value)
-            | Parser.IntermediateExpr.Variable(value) -> Ok(Variable value)
-            | Parser.IntermediateExpr.App(func, args) ->
+            | IntermediateExpr.Numeral(value, measure) -> Ok(Numeral(value, measure))
+            | IntermediateExpr.String(value) -> Ok(String value)
+            | IntermediateExpr.Variable(value) -> Ok(Variable value)
+            | IntermediateExpr.App(func, args) ->
                 monad {
                     let! func' = Expr.tryFrom func
 
@@ -204,7 +200,7 @@ module AST =
 
                     return App(func', args')
                 }
-            | Parser.IntermediateExpr.BinOpSeries(init, last) ->
+            | IntermediateExpr.BinOpSeries(init, last) ->
                 // TODO: Give this from outside.
                 let binOpDictionary =
                     [ [ BinOp.Other "&&"; BinOp.Other "||" ], Associativity.Left
@@ -221,7 +217,7 @@ module AST =
 
                 let rec fold
                     (dictionary: (BinOp list * Associativity) list)
-                    (init: (Parser.IntermediateExpr * Parser.BinOp) list, last: Parser.IntermediateExpr)
+                    (init: (IntermediateExpr * BinOp) list, last: IntermediateExpr)
                     : Result<Expr, string> =
                     match dictionary with
                     | [] ->
@@ -231,13 +227,13 @@ module AST =
                             Error(
                                 snd init.Head
                                 |> function
-                                    | Parser.BinOp.Other s -> sprintf "Unknown binary operator `%s`." s
+                                    | BinOp.Other s -> sprintf "Unknown binary operator `%s`." s
                             )
                     | (operators, associativity) :: restDictionary ->
-                        let rec tryCollect current (init: (Parser.IntermediateExpr * Parser.BinOp) list) =
+                        let rec tryCollect current (init: (IntermediateExpr * BinOp) list) =
                             match init with
                             | [] -> Ok([], (current, last))
-                            | (e, op) :: rest when operators |> Seq.contains (BinOp.from op) ->
+                            | (e, op) :: rest when operators |> Seq.contains op ->
                                 monad {
                                     let! parts, lastPart = tryCollect [] rest
                                     return (List.rev current, e, op) :: parts, lastPart
@@ -265,12 +261,11 @@ module AST =
                                     |> bind (fun parts' ->
                                         parts'
                                         |> Seq.rev
-                                        |> Seq.reduce (fun (expr0, op0) (expr1, op1) ->
-                                            BinOp(BinOp.from op0, expr0, expr1), op1)
+                                        |> Seq.reduce (fun (expr0, op0) (expr1, op1) -> BinOp(op0, expr0, expr1), op1)
                                         |> (fun (expr, op) ->
                                             monad {
                                                 let! lastExpr = fold restDictionary lastPart
-                                                return BinOp(BinOp.from op, expr, lastExpr)
+                                                return BinOp(op, expr, lastExpr)
                                             }))
                                 | Associativity.Right ->
                                     parts
@@ -289,7 +284,7 @@ module AST =
                                         ||> Seq.fold (fun acc (expr, op) ->
                                             monad {
                                                 let! acc' = acc
-                                                return BinOp(BinOp.from op, expr, acc')
+                                                return BinOp(op, expr, acc')
                                             }))
                                 | Associativity.None ->
                                     match parts with
@@ -297,7 +292,7 @@ module AST =
                                         monad {
                                             let! first = fold restDictionary (init', last')
                                             let! second = fold restDictionary lastPart
-                                            return BinOp(BinOp.from op', first, second)
+                                            return BinOp(op', first, second)
                                         }
                                     | [] -> Error "Unreachable."
                                     | _ ->
@@ -306,12 +301,12 @@ module AST =
                                                 "An operator `%s` is not associative."
                                                 (parts.Head
                                                  |> function
-                                                     | (_, _, Parser.BinOp.Other s) -> s)
+                                                     | (_, _, BinOp.Other s) -> s)
                                         ))
 
                 fold binOpDictionary (init, last)
 
-            | Parser.IntermediateExpr.Tuple(contents) ->
+            | IntermediateExpr.Tuple(contents) ->
                 (contents, Ok [])
                 ||> Seq.foldBack (fun content acc ->
                     monad {
@@ -321,22 +316,21 @@ module AST =
                     })
                 |>> Tuple
 
-
     and Statement =
         | Do of Expr * block: Statement list option
         | At of Expr * block: Statement list option
         | Gets of Expr * Expr
-        | Talk of string
+        | Talk of Talk
 
     type AST =
         { Statements: Statement list }
 
         static member from(nodes: Lexer.Node list) =
-            let rec statement (intermediate: Parser.Intermediate) =
+            let rec statement (intermediate: Intermediate) =
                 match intermediate with
-                | Parser.Intermediate.Do e -> Expr.tryFrom e |>> (fun e -> Do(e, None))
-                | Parser.Intermediate.At e -> Expr.tryFrom e |>> (fun e -> At(e, None))
-                | Parser.Intermediate.Gets(target, content) ->
+                | Intermediate.Do e -> Expr.tryFrom e |>> (fun e -> Do(e, None))
+                | Intermediate.At e -> Expr.tryFrom e |>> (fun e -> At(e, None))
+                | Intermediate.Gets(target, content) ->
                     monad {
                         let! target' = Expr.tryFrom target
                         let! content' = Expr.tryFrom content
@@ -348,10 +342,27 @@ module AST =
                 | [] -> Ok(List.rev currentRev, [])
                 | node :: rest ->
                     match node with
-                    | Lexer.Node.Talk talk -> statements rest (Talk talk :: currentRev)
+                    | Lexer.Node.Talk talkTokens ->
+                        let subtitle =
+                            talkTokens
+                            |> Seq.choose (function
+                                | Lexer.TalkToken.Both s
+                                | Lexer.TalkToken.Subtitle s -> Some s
+                                | Lexer.TalkToken.Speech _ -> None)
+                            |> String.concat ""
+
+                        let speech =
+                            talkTokens
+                            |> Seq.choose (function
+                                | Lexer.TalkToken.Both s
+                                | Lexer.TalkToken.Speech s -> Some s
+                                | Lexer.TalkToken.Subtitle _ -> None)
+                            |> String.concat ""
+
+                        statements rest (Talk { Subtitle = subtitle; Speech = speech } :: currentRev)
                     | Lexer.Node.Line line ->
                         monad {
-                            let! intermediate = Parser.Intermediate.initFrom line
+                            let! intermediate = Intermediate.initFrom line
                             let! statement = statement intermediate
                             return! statements rest (statement :: currentRev)
                         }

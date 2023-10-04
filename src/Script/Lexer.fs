@@ -23,8 +23,14 @@ module Lexer =
             | OtherOperator _ -> true
             | _ -> false
 
+    [<RequireQualifiedAccess>]
+    type TalkToken =
+        | Both of string
+        | Subtitle of string
+        | Speech of string
+
     type Node =
-        | Talk of string
+        | Talk of TalkToken list
         | Line of LineNode list
         | BeginIndent
         | EndIndent
@@ -187,25 +193,58 @@ module Lexer =
             //       read but
             // this line is not read.
 
-            let rec loop content =
-                seq {
-                    match state.TryNextLine with
-                    | None -> yield Talk content
-                    | Some nextLine ->
-                        let nextIndent = nextLine |> Line.indent
-                        let nextContent = nextLine |> Line.content
+            let rec loop content : string =
+                match state.TryNextLine with
+                | None -> content
+                | Some nextLine ->
+                    let nextIndent = nextLine |> Line.indent
+                    let nextContent = nextLine |> Line.content
 
-                        if nextContent = "" then
-                            state.DropLine
-                            yield! loop content
-                        elif nextIndent <= state.currentIndent then
-                            yield Talk content
-                        else
-                            state.DropLine
-                            yield! loop (content + "\n" + nextContent)
-                }
+                    if nextContent = "" then
+                        state.DropLine
+                        loop content
+                    elif nextIndent <= state.currentIndent then
+                        content
+                    else
+                        state.DropLine
+                        loop (content + "\n" + nextContent)
 
-            lineContent |> String.drop 1 |> String.trimStart [ ' ' ] |> loop
+            // TODO: Handle other incorrect cases.
+            let rec collect currentRev retRev fullContent =
+                match fullContent with
+                | [] ->
+                    ((currentRev |> List.rev |> String.ofList |> TalkToken.Both) :: retRev)
+                    |> List.rev
+                | '\\' :: '{' :: rest -> collect ('{' :: currentRev) retRev rest
+                | '\\' :: '}' :: rest -> collect ('}' :: currentRev) retRev rest
+                | '{' :: rest ->
+                    collectSubtitle [] ((currentRev |> List.rev |> String.ofList |> TalkToken.Both) :: retRev) rest
+                | head :: rest -> collect (head :: currentRev) retRev rest
+
+            and collectSubtitle currentRev retRev fullContent =
+                match fullContent with
+                | [] -> failwith "Unexpected end of file."
+                | '\\' :: '|' :: rest -> collectSubtitle ('|' :: currentRev) retRev rest
+                | '|' :: rest ->
+                    collectSpeech [] ((currentRev |> List.rev |> String.ofList |> TalkToken.Subtitle) :: retRev) rest
+                | head :: rest -> collectSubtitle (head :: currentRev) retRev rest
+
+            and collectSpeech currentRev retRev fullContent =
+                match fullContent with
+                | [] -> failwith "Unexpected end of file."
+                | '\\' :: '}' :: rest -> collectSpeech ('}' :: currentRev) retRev rest
+                | '}' :: rest ->
+                    collect [] ((currentRev |> List.rev |> String.ofList |> TalkToken.Speech) :: retRev) rest
+                | head :: rest -> collectSpeech (head :: currentRev) retRev rest
+
+            lineContent
+            |> String.drop 1
+            |> String.trimStart [ ' ' ]
+            |> loop
+            |> String.toList
+            |> collect [] []
+            |> Talk
+            |> Seq.singleton
 
         let readLine lineContent =
             // Read next lines while the indent is greater than the current indent and until the line contains a colon:
