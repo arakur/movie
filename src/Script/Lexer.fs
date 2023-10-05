@@ -133,7 +133,7 @@ module Lexer =
             content |> between quote quote |>> LineNode.String
 
         let parseWord: Parser<LineNode, unit> =
-            let head = noneOf symbolChars
+            let head = noneOf ([ ' '; ',' ] @ symbolChars)
             let rest = many (noneOf [ ' '; ',' ])
             pipe2 head rest (fun h r -> h :: r |> String.ofList |> LineNode.Word)
 
@@ -167,7 +167,7 @@ module Lexer =
             .>> whiteSpace
 
         let parseLine: Parser<LineNode list, unit> =
-            attempt (pipe2 at (many1 parseNode) (fun at nodes -> at :: nodes))
+            attempt (pipe2 (at .>> whiteSpace) (many1 parseNode) (fun at nodes -> at :: nodes))
             <|> many1 parseNode
 
         source
@@ -375,3 +375,4 @@ module Lexer =
             let lastIndent = state.PopIndentWhile 0
             for _ in 1..lastIndent -> EndIndent
         }
+        |> Seq.toList

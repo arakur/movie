@@ -260,11 +260,11 @@ and Children =
                             RadioLayers = Some { radioLayers with Selected = name } }
             })
 
-    member this.TryTurnOn(path: string list) =
-        match path with
-        | [] -> Error EmptyLocation
-        | [ name ] -> this.TryTurnOn name
-        | name :: rest ->
+    member this.TryTurnOn(path: string seq) =
+        match path |> Seq.tryHeadTail with
+        | None -> Error EmptyLocation
+        | Some(name, rest) when rest |> Seq.isEmpty -> this.TryTurnOn name
+        | Some(name, rest) ->
             let f = Children.tryTurnOn rest >> Result.mapError (AppearanceError.append name)
 
             this.ModifyLayer name (fun layerView ->
@@ -277,7 +277,7 @@ and Children =
                 })
             |> Result.bindError (fun error -> this.OrModifyRadioLayer error name (LayerForFlip.modify f))
 
-    static member tryTurnOn (path: string list) (children: Children) = children.TryTurnOn path
+    static member tryTurnOn (path: string seq) (children: Children) = children.TryTurnOn path
 
     member this.TryTurnOff name =
         this.ModifyLayer name (fun layerView ->
@@ -306,11 +306,11 @@ and Children =
             })
 
 
-    member this.TryTurnOff(path: string list) =
-        match path with
-        | [] -> Error EmptyLocation
-        | [ name ] -> this.TryTurnOff name
-        | name :: rest ->
+    member this.TryTurnOff(path: string seq) =
+        match path |> Seq.tryHeadTail with
+        | None -> Error EmptyLocation
+        | Some(name, rest) when rest |> Seq.isEmpty -> this.TryTurnOff name
+        | Some(name, rest) ->
             let f = Children.tryTurnOff rest >> Result.mapError (AppearanceError.append name)
 
             this.ModifyLayer name (fun layerView ->
@@ -323,7 +323,7 @@ and Children =
                 })
             |> Result.bindError (fun error -> this.OrModifyRadioLayer error name (LayerForFlip.modify f))
 
-    static member tryTurnOff (path: string list) (children: Children) = children.TryTurnOff path
+    static member tryTurnOff (path: string seq) (children: Children) = children.TryTurnOff path
 
 type AppearanceData =
     { Width: int

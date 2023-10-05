@@ -4,7 +4,7 @@ module Parser =
     open FSharpPlus
 
     [<RequireQualifiedAccess>]
-    type BinOp =
+    type BinaryOperator =
         | Other of string
 
         member this.Name =
@@ -17,7 +17,7 @@ module Parser =
         | String of string
         | Variable of string
         | App of IntermediateExpr * IntermediateExpr list
-        | BinOpSeries of init: (IntermediateExpr * BinOp) list * last: IntermediateExpr
+        | BinOpSeries of init: (IntermediateExpr * BinaryOperator) list * last: IntermediateExpr
         | Tuple of IntermediateExpr list
 
     [<RequireQualifiedAccess>]
@@ -42,7 +42,7 @@ module Parser =
 
             let binOp (node: Lexer.LineNode) =
                 match node with
-                | Lexer.LineNode.OtherOperator(value) -> Ok(BinOp.Other value)
+                | Lexer.LineNode.OtherOperator(value) -> Ok(BinaryOperator.Other value)
                 | _ -> Error "Expected bin op."
 
             let parseBinOp (line: Lexer.LineNode list) =
@@ -95,7 +95,7 @@ module Parser =
 
             and parseBinOpSeries
                 (line: Lexer.LineNode list)
-                : Result<(IntermediateExpr * BinOp) list * IntermediateExpr * Lexer.LineNode list, string> =
+                : Result<(IntermediateExpr * BinaryOperator) list * IntermediateExpr * Lexer.LineNode list, string> =
                 let tryTermBinOp =
                     line |> parseTerm |>> (fun (term, rest) -> term, rest, parseBinOp rest)
 
@@ -153,12 +153,12 @@ module Parser =
                 }
 
             parseAt line
+            |> Result.bindError (fun _ -> parseGets line)
             |> Result.bindError (fun _ ->
                 parseBinOpSeries' line
                 |> Result.bind (function
                     | ret, [] -> Ok(Do ret)
                     | _, rest -> Error(sprintf "Unexpected: %A." rest)))
-            |> Result.bindError (fun _ -> parseGets line)
 
     [<RequireQualifiedAccess>]
     type Associativity =
@@ -174,7 +174,7 @@ module Parser =
         | String of string
         | Variable of string
         | App of Expr * args: Expr list
-        | BinOp of BinOp * Expr * Expr
+        | BinaryOperator of BinaryOperator * Expr * Expr
         | Tuple of Expr list
 
         static member tryFrom(intermediate: IntermediateExpr) =
@@ -203,21 +203,21 @@ module Parser =
             | IntermediateExpr.BinOpSeries(init, last) ->
                 // TODO: Give this from outside.
                 let binOpDictionary =
-                    [ [ BinOp.Other "&&"; BinOp.Other "||" ], Associativity.Left
-                      [ BinOp.Other "="
-                        BinOp.Other "<"
-                        BinOp.Other ">"
-                        BinOp.Other "<="
-                        BinOp.Other ">=" ],
+                    [ [ BinaryOperator.Other "&&"; BinaryOperator.Other "||" ], Associativity.Left
+                      [ BinaryOperator.Other "="
+                        BinaryOperator.Other "<"
+                        BinaryOperator.Other ">"
+                        BinaryOperator.Other "<="
+                        BinaryOperator.Other ">=" ],
                       Associativity.None
-                      [ BinOp.Other "+"; BinOp.Other "-" ], Associativity.Left
-                      [ BinOp.Other "*"; BinOp.Other "/" ], Associativity.Left
+                      [ BinaryOperator.Other "+"; BinaryOperator.Other "-" ], Associativity.Left
+                      [ BinaryOperator.Other "*"; BinaryOperator.Other "/" ], Associativity.Left
 
                       ]
 
                 let rec fold
-                    (dictionary: (BinOp list * Associativity) list)
-                    (init: (IntermediateExpr * BinOp) list, last: IntermediateExpr)
+                    (dictionary: (BinaryOperator list * Associativity) list)
+                    (init: (IntermediateExpr * BinaryOperator) list, last: IntermediateExpr)
                     : Result<Expr, string> =
                     match dictionary with
                     | [] ->
@@ -227,10 +227,10 @@ module Parser =
                             Error(
                                 snd init.Head
                                 |> function
-                                    | BinOp.Other s -> sprintf "Unknown binary operator `%s`." s
+                                    | BinaryOperator.Other s -> sprintf "Unknown binary operator `%s`." s
                             )
                     | (operators, associativity) :: restDictionary ->
-                        let rec tryCollect current (init: (IntermediateExpr * BinOp) list) =
+                        let rec tryCollect current (init: (IntermediateExpr * BinaryOperator) list) =
                             match init with
                             | [] -> Ok([], (current, last))
                             | (e, op) :: rest when operators |> Seq.contains op ->
@@ -261,11 +261,12 @@ module Parser =
                                     |> bind (fun parts' ->
                                         parts'
                                         |> Seq.rev
-                                        |> Seq.reduce (fun (expr0, op0) (expr1, op1) -> BinOp(op0, expr0, expr1), op1)
+                                        |> Seq.reduce (fun (expr0, op0) (expr1, op1) ->
+                                            BinaryOperator(op0, expr0, expr1), op1)
                                         |> (fun (expr, op) ->
                                             monad {
                                                 let! lastExpr = fold restDictionary lastPart
-                                                return BinOp(op, expr, lastExpr)
+                                                return BinaryOperator(op, expr, lastExpr)
                                             }))
                                 | Associativity.Right ->
                                     parts
@@ -284,7 +285,7 @@ module Parser =
                                         ||> Seq.fold (fun acc (expr, op) ->
                                             monad {
                                                 let! acc' = acc
-                                                return BinOp(op, expr, acc')
+                                                return BinaryOperator(op, expr, acc')
                                             }))
                                 | Associativity.None ->
                                     match parts with
@@ -292,7 +293,7 @@ module Parser =
                                         monad {
                                             let! first = fold restDictionary (init', last')
                                             let! second = fold restDictionary lastPart
-                                            return BinOp(op', first, second)
+                                            return BinaryOperator(op', first, second)
                                         }
                                     | [] -> Error "Unreachable."
                                     | _ ->
@@ -301,7 +302,7 @@ module Parser =
                                                 "An operator `%s` is not associative."
                                                 (parts.Head
                                                  |> function
-                                                     | (_, _, BinOp.Other s) -> s)
+                                                     | (_, _, BinaryOperator.Other s) -> s)
                                         ))
 
                 fold binOpDictionary (init, last)

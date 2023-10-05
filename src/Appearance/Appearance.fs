@@ -44,21 +44,21 @@ type Appearance =
 
     static member vFlip(appearance: Appearance) = appearance.VFlip()
 
-    member this.TryTurnOn(path: string list) : AppearanceResult<Appearance> =
+    member this.TryTurnOn(path: string seq) : AppearanceResult<Appearance> =
         Children.tryTurnOn path this.Data.Children
         |> Result.map (fun children ->
             { this with
                 Data = { this.Data with Children = children } })
 
-    static member tryTurnOn (path: string list) (appearance: Appearance) = appearance.TryTurnOn path
+    static member tryTurnOn (path: string seq) (appearance: Appearance) = appearance.TryTurnOn path
 
-    member this.TryTurnOff(path: string list) : AppearanceResult<Appearance> =
+    member this.TryTurnOff(path: string seq) : AppearanceResult<Appearance> =
         Children.tryTurnOff path this.Data.Children
         |> Result.map (fun children ->
             { this with
                 Data = { this.Data with Children = children } })
 
-    static member tryTurnOff (path: string list) (appearance: Appearance) = appearance.TryTurnOff path
+    static member tryTurnOff (path: string seq) (appearance: Appearance) = appearance.TryTurnOff path
 
     member this.Write(magick: ImageMagick, outputTo: Path) =
         let rec collectLayerForFlip (layerForFlip: LayerForFlip) =

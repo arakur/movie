@@ -53,7 +53,7 @@ module SpeakerState =
                 { s.Appearance with
                     Appearance = Appearance.Appearance.hFlip s.Appearance.Appearance } }
 
-    let turnOn (path: string list) (s: SpeakerState) =
+    let turnOn (path: string seq) (s: SpeakerState) =
         { s with
             Appearance =
                 { s.Appearance with
