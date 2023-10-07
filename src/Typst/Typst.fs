@@ -3,6 +3,7 @@
 open Measure
 open Types
 
+[<RequireQualifiedAccess>]
 type Weight =
     | Thin
     | ExtraLight
@@ -13,8 +14,21 @@ type Weight =
     | Bold
     | ExtraBold
     | Black
-    | Weight of int
+    | OfInt of int
 
+    static member tryFrom s =
+        match s with
+        | "thin" -> Some Thin
+        | "extra-light" -> Some ExtraLight
+        | "light" ->Some  Light
+        | "regular" -> Some Regular
+        | "medium" ->Some  Medium
+        | "semi-bold" ->Some  SemiBold
+        | "bold" -> Some Bold
+        | "extra-bold" ->Some  ExtraBold
+        | "black" ->Some  Black
+        | _ -> None
+     
     member this.Compose() =
         match this with
         | Thin -> "\"thin\""
@@ -26,7 +40,7 @@ type Weight =
         | Bold -> "\"bold\""
         | ExtraBold -> "\"extra-bold\""
         | Black -> "\"black\""
-        | Weight i -> sprintf "%d" i
+        | OfInt i -> sprintf "%d" i
 
 type Page =
     { Width: float<pt>

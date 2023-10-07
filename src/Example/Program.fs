@@ -9,7 +9,7 @@ open Frame.MovieBuilder
 open Script
 open Voicevox
 
-let script = System.IO.File.ReadAllText "script0.txt"
+let script = System.IO.File.ReadAllText "script.txt"
 
 let lines = Lexer.nodesFrom script
 
@@ -25,7 +25,7 @@ let initialState =
             { Font =
                 { Color = RGB(255, 255, 255)
                   Size = 50.0<pt>
-                  Weight = Bold
+                  Weight = Weight.Bold
                   Family = "Noto Sans CJK JP" }
               Pos = { X = 400<px>; Y = 700<px> }
               Size = { Width = 1000<px>; Height = 300<px> }
@@ -54,14 +54,18 @@ let initialState =
 
 let evalEnv =
     EvalEnv()
-        .WithInnerOperator("on", 1)
+        .WithInnerOperator("initialize", 0)
+        .WithInnerOperator("add-appearance", 1)
         .WithInnerOperator("appearance", 0)
-        .WithInnerOperatorSynonym("on", "on")
+        .WithInnerOperator("on", 1)
+        .WithInnerOperatorSynonym("initialize", "initialize")
+        .WithInnerOperatorSynonym("add-appearance", "add-appearance")
         .WithInnerOperatorSynonym("appearance", "appearance")
         .WithInnerOperatorSynonym("立ち絵", "appearance")
+        .WithInnerOperatorSynonym("on", "on")
 
 let movieState =
-    Interpreter.run movie (evalEnv, initialState) ast
+    Interpreter.run movie ast (evalEnv, initialState)
     |> function
         | Ok(_, state) -> state
         | Error e -> failwith e
@@ -72,7 +76,7 @@ let movieState' =
             { Font =
                 { Color = RGB(255, 255, 255)
                   Size = 50.0<pt>
-                  Weight = Bold
+                  Weight = Weight.Bold
                   Family = "Noto Sans CJK JP" }
               Pos = { X = 400<px>; Y = 700<px> }
               Size = { Width = 1000<px>; Height = 300<px> }

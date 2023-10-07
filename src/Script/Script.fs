@@ -6,7 +6,6 @@ open FSharpPlus.Data
 type RevList<'a> = { Contents: 'a list; Length: int }
 
 module RevList =
-
     let empty<'a> = { Contents = []; Length = 0 }
 
     let add<'a> v (this: RevList<'a>) =
@@ -18,6 +17,10 @@ module RevList =
     let toArray<'a> (this: RevList<'a>) = this |> toList |> Array.ofList
 
 module private ResultExt =
+    let orElse<'a> (secondThunk: unit -> Result<'a, string>) (first: Result<'a, string>) =
+        first
+        |> Result.bindError (fun error -> secondThunk () |> Result.mapError (sprintf "%s && %s" error))
+
     let sequence<'a, 'b> (xs: Result<'a, 'b> seq) : Result<'a seq, 'b> =
         (Ok [], xs)
         ||> Seq.fold (fun acc x ->
@@ -27,6 +30,27 @@ module private ResultExt =
                 return! Ok(acc |> List.cons x)
             })
         |>> Seq.rev
+
+module private ArrayExt =
+    let tryAsEmpty<'a, 'e> (message: 'e) (xs: 'a array) : Result<unit, 'e> =
+        match xs with
+        | [||] -> Ok()
+        | _ -> Error message
+
+    let tryAsSingleton<'a, 'e> (message: 'e) (xs: 'a array) : Result<'a, 'e> =
+        match xs with
+        | [| x |] -> Ok x
+        | _ -> Error message
+
+    let tryAsTuple2<'a, 'e> (message: 'e) (xs: 'a array) : Result<'a * 'a, 'e> =
+        match xs with
+        | [| x0; x1 |] -> Ok(x0, x1)
+        | _ -> Error message
+
+    let tryAsTuple3<'a, 'e> (message: 'e) (xs: 'a array) : Result<'a * 'a * 'a, 'e> =
+        match xs with
+        | [| x0; x1; x2 |] -> Ok(x0, x1, x2)
+        | _ -> Error message
 
 //
 
@@ -42,6 +66,17 @@ type Numeral =
         | Int(_, m)
         | Float(_, m) -> m
 
+    static member tryAsInt this =
+        match this with
+        | Int(i, None) -> Ok i
+        | _ -> Error "Invalid type; expected int."
+
+    static member tryAsFloatMeas measure this =
+        match this with
+        | Int(i, Some m) when m = measure -> Ok(float i)
+        | Float(f, Some m) when m = measure -> Ok f
+        | _ -> Error(sprintf "Invalid type; expected float with %s." measure)
+
 type BinaryOperator = string
 
 type InnerOperator = string
@@ -56,6 +91,37 @@ type Value =
     | InnerOperator of InnerOperator
     | InnerOperatorPartiallyApplied of InnerOperator * arity: int * Value RevList
     | InnerOperatorApplied of InnerOperator * Value array
+
+    static member tryAsNumeral this =
+        match this with
+        | Numeral num -> Ok num
+        | _ -> Error "Invalid type; expected numeral."
+
+    static member tryAsInt this =
+        this |> Value.tryAsNumeral >>= Numeral.tryAsInt
+
+    static member tryAsFloatMeas measure this =
+        this |> Value.tryAsNumeral >>= Numeral.tryAsFloatMeas measure
+
+    static member tryAsString this =
+        match this with
+        | String str -> Ok str
+        | _ -> Error "Invalid type; expected string."
+
+    static member tryAsTuple this =
+        match this with
+        | Tuple tup -> Ok tup
+        | _ -> Error "Invalid type; expected tuple."
+
+    static member tryAsTupleWithSize size this =
+        match this with
+        | Tuple tup when tup.Length = size -> Ok tup
+        | _ -> Error "Invalid type; expected tuple."
+
+    static member tryAsInnerOperatorApplied this =
+        match this with
+        | InnerOperatorApplied(inner, args) -> Ok(inner, args)
+        | _ -> Error "Invalid type; expected inner operator with full arguments."
 
 type IEvalEnv =
     abstract member TryVariable: string -> Value option
@@ -98,7 +164,6 @@ type EvalEnv
         member this.TryBinaryOperator op = this.BinaryOperators.TryFind op
 
 module Value =
-
     let tryApply (env: IEvalEnv) (arg: Value) (f: Value) =
         match f with
         | Value.Numeral _
@@ -175,97 +240,383 @@ module Interpreter =
             |>> Seq.toArray
             |>> Value.Tuple
 
+    //
+
+    type private FontState =
+        { Color: Types.Color option
+          Family: string option
+          Size: float<Measure.pt> option
+          Weight: Typst.Weight option }
+
+    let private runFont (block: Parser.Statement list option) (env: IEvalEnv, fontState: FontState option) =
+        block
+        |> Option.toResultWith "Expected block."
+        >>= Seq.fold
+            (fun acc statement ->
+                monad {
+                    let! env, font = acc
+
+                    match statement with
+                    | Parser.Statement.Gets(targetExpr, contentExpr) ->
+                        let! target = targetExpr |> tryEval env
+                        let! content = contentExpr |> tryEval env
+
+                        let font' =
+                            font
+                            |> Option.defaultValue
+                                { Color = None
+                                  Size = None
+                                  Weight = None
+                                  Family = None }
+
+                        let! fieldName = target |> Value.tryAsString
+
+                        match fieldName with
+                        | "color" ->
+                            let! r, g, b =
+                                content |> Value.tryAsTuple >>= (Seq.map Value.tryAsInt >> ResultExt.sequence)
+                                |>> Array.ofSeq
+                                >>= ArrayExt.tryAsTuple3 "Expected a tuple with 3 elements."
+
+                            let font'' =
+                                { font' with
+                                    Color = Some(Types.RGB(r, g, b)) }
+
+                            return env, Some font''
+                        | "size" ->
+                            let! size = content |> Value.tryAsFloatMeas "pt"
+
+                            let font'' =
+                                { font' with
+                                    Size = Some(size * 1.<Measure.pt>) }
+
+                            return env, Some font''
+                        | "weight" ->
+                            let tryNamedWeight () =
+                                monad {
+                                    let! name = content |> Value.tryAsString
+
+                                    let! weight =
+                                        name |> Typst.Weight.tryFrom |> Option.toResultWith "Invalid weight name."
+
+                                    let font'' = { font' with Weight = Some weight }
+
+                                    return env, Some font''
+                                }
+
+                            let tryIntWeight () =
+                                monad {
+                                    let! weightValue = content |> Value.tryAsInt
+
+                                    let font'' =
+                                        { font' with
+                                            Weight = Some(Typst.Weight.OfInt weightValue) }
+
+                                    return env, Some font''
+                                }
+
+                            return! tryNamedWeight () |> ResultExt.orElse tryIntWeight
+                        | "family" ->
+                            let! family = content |> Value.tryAsString
+                            let font'' = { font' with Family = Some family }
+                            return env, Some font''
+                        | _ -> return! Error "Unknown field name in font."
+                    | _ -> return! Error "Invalid statement."
+                })
+            (Ok(env, fontState))
+
+    //
+
+    type private PosState =
+        { X: option<int<Measure.px>>
+          Y: option<int<Measure.px>> }
+
+    let private runPos (block: Parser.Statement list option) (env: IEvalEnv, posState: PosState option) =
+        block
+        |> Option.toResultWith "Expected block."
+        >>= Seq.fold
+            (fun acc statement ->
+                monad {
+                    let! env, pos = acc
+
+                    match statement with
+                    | Parser.Statement.Gets(targetExpr, contentExpr) ->
+                        let! target = targetExpr |> tryEval env >>= Value.tryAsString
+
+                        let pos' = pos |> Option.defaultValue { X = None; Y = None }
+
+                        match target with
+                        | "x" ->
+                            let! x = contentExpr |> tryEval env >>= Value.tryAsFloatMeas "px"
+
+                            let pos'' =
+                                { pos' with
+                                    X = Some(int x * 1<Measure.px>) }
+
+                            return env, Some pos''
+                        | "y" ->
+                            let! y = contentExpr |> tryEval env >>= Value.tryAsFloatMeas "px"
+
+                            let pos'' =
+                                { pos' with
+                                    Y = Some(int y * 1<Measure.px>) }
+
+                            return env, Some pos''
+                        | _ -> return! Error "Unknown field name in pos."
+                    | _ -> return! Error "Invalid statement."
+                })
+            (Ok(env, posState))
+
+    type private InitializeSizeState =
+        { Width: int<Measure.px> option
+          Height: int<Measure.px> option }
+
+    let private runSize (block: Parser.Statement list option) (env: IEvalEnv, sizeState: InitializeSizeState option) =
+        block
+        |> Option.toResultWith "Expected block."
+        >>= (fun block' ->
+            (Ok(env, sizeState), block')
+            ||> Seq.fold (fun acc statement ->
+                monad {
+                    let! env, size = acc
+
+                    match statement with
+                    | Parser.Statement.Gets(targetExpr, contentExpr) ->
+                        let! target = targetExpr |> tryEval env
+                        let! content = contentExpr |> tryEval env
+
+                        let size' = size |> Option.defaultValue { Width = None; Height = None }
+
+                        let! fieldName = target |> Value.tryAsString
+
+                        match fieldName with
+                        | "width" ->
+                            let! width = content |> Value.tryAsFloatMeas "px"
+
+                            let size'' =
+                                { size' with
+                                    Width = Some(int width * 1<Measure.px>) }
+
+                            return env, Some size''
+                        | "height" ->
+                            let! height = content |> Value.tryAsFloatMeas "px"
+
+                            let size'' =
+                                { size' with
+                                    Height = Some(int height * 1<Measure.px>) }
+
+                            return env, Some size''
+                        | _ -> return! Error "Unknown field name in size."
+                    | _ -> return! Error "Invalid statement."
+                }))
+
+    type private InitializeState =
+        { Font: FontState option
+          Pos: PosState option
+          Size: InitializeSizeState option
+          Background: Frame.Background option }
+
+    let runInitialize
+        (movie: Frame.MovieBuilder)
+        (args: Value array)
+        (block: Parser.Statement list option)
+        (env: IEvalEnv, _state: Frame.MovieState)
+        : Result<IEvalEnv * Frame.MovieState, string> =
+        let initialState =
+            { Font = None
+              Pos = None
+              Size = None
+              Background = None }
+
+        monad {
+            do! args |> ArrayExt.tryAsEmpty "Expected no arguments."
+            return! block |> Option.toResultWith "Expected block."
+        }
+        >>= Seq.fold
+            (fun acc statement ->
+                monad {
+                    let! env, config = acc
+
+                    match statement with
+                    | Parser.Statement.Gets(targetExpr, contentExpr) ->
+                        let! target = targetExpr |> tryEval env >>= Value.tryAsString
+
+                        match target with
+                        | "background" ->
+                            // TODO: 色指定にも対応する．
+                            let! background = contentExpr |> tryEval env >>= Value.tryAsString
+
+                            let config' =
+                                { config with
+                                    Background = Some(Frame.Background.File background) }
+
+                            return env, config'
+                        | _ -> return! Error "Invalid assignment."
+                    | Parser.Statement.Do(expr, optBlock) ->
+                        let! fieldName = expr |> tryEval env >>= Value.tryAsString
+
+                        match fieldName with
+                        | "font" ->
+                            let! env', font' = runFont optBlock (env, config.Font)
+                            return env', { config with Font = font' }
+                        | "pos" ->
+                            let! env', pos' = runPos optBlock (env, config.Pos)
+                            return env', { config with Pos = pos' }
+                        | "size" ->
+                            let! env', size' = runSize optBlock (env, config.Size)
+                            return env', { config with Size = size' }
+                        | _ -> return! Error "Unknown field name in initialize."
+                    | _ -> return! Error "Invalid statement."
+                })
+            (Ok(env, initialState))
+        |> Result.bind (fun (env, config) ->
+            monad {
+                // TODO: デフォルト値を設定する．
+                let! font = config.Font |> Option.toResultWith "Font is not set."
+                let! pos = config.Pos |> Option.toResultWith "Pos is not set."
+                let! size = config.Size |> Option.toResultWith "Size is not set."
+                let! background = config.Background |> Option.toResultWith "Background is not set."
+
+                let! fontColor = font.Color |> Option.toResultWith "Font color is not set."
+                let! fontSize = font.Size |> Option.toResultWith "Font size is not set."
+                let! fontWeight = font.Weight |> Option.toResultWith "Font weight is not set."
+                let! fontFamily = font.Family |> Option.toResultWith "Font family is not set."
+
+                let! posX = pos.X |> Option.toResultWith "Pos X is not set."
+                let! posY = pos.Y |> Option.toResultWith "Pos Y is not set."
+
+                let! sizeWidth = size.Width |> Option.toResultWith "Size width is not set."
+                let! sizeHeight = size.Height |> Option.toResultWith "Size height is not set."
+
+                let config' =
+                    { Frame.Initialize.Font =
+                        { Color = fontColor
+                          Size = fontSize
+                          Weight = fontWeight
+                          Family = fontFamily }
+                      Frame.Initialize.Pos = { X = posX; Y = posY }
+                      Frame.Initialize.Size =
+                        { Width = sizeWidth
+                          Height = sizeHeight }
+                      Frame.Initialize.Background = background }
+
+                let state' = movie.Initialize((), config')
+                return env, state'
+            })
+
+    //
+
+    type private AddSpeakerAppearanceState =
+        { Appearance: string option
+          Pos: PosState option }
+
+    type private AddSpeakerState =
+        { Name: string option
+          Style: string option
+          Font: FontState option
+          Appearance: AddSpeakerAppearanceState option }
+
+    let private runAddSpeaker
+        (movie: Frame.MovieBuilder)
+        (args: Value array)
+        (block: Parser.Statement list option)
+        (env: IEvalEnv, state: Frame.MovieState)
+        : Result<IEvalEnv * Frame.MovieState, string> =
+        monad {
+            let! name = args |> ArrayExt.tryAsSingleton "Expected one argument." >>= Value.tryAsString
+            let! block = block |> Option.toResultWith "Expected block."
+            return failwith "TODO" // TODO
+        }
+
+    //
+
+    let runAppearance
+        (movie: Frame.MovieBuilder)
+        (args: Value array)
+        (block: Parser.Statement list option)
+        (env: IEvalEnv, state: Frame.MovieState)
+        : Result<IEvalEnv * Frame.MovieState, string> =
+        let operators =
+            [ "on",
+              fun (args: Value array) (block: Parser.Statement list option) ->
+                  monad {
+                      let! layerPath = args |> ArrayExt.tryAsSingleton "Expected one argument." >>= Value.tryAsString
+
+                      if block <> None then
+                          do! Error "Expected no block."
+
+                      let segments = layerPath |> String.split [ "/" ]
+                      let f' = Frame.SpeakerState.turnOn segments
+                      return env, f'
+                  } ]
+            |> Map.ofSeq
+
+        monad {
+            do! args |> ArrayExt.tryAsEmpty "Expected no arguments."
+
+            let! block' = block |> Option.toResultWith "Expected block."
+
+            return!
+                (Ok(env, id), block')
+                ||> Seq.fold (fun acc statement ->
+                    match statement with
+                    | Parser.Statement.Do(expr, block) ->
+                        monad {
+                            let! env, f = acc
+
+                            if block <> None then
+                                do! Error "Expected no block."
+
+                            let! s, args = expr |> tryEval env >>= Value.tryAsInnerOperatorApplied
+
+                            let! op = operators.TryFind s |> Option.toResultWith "Unknown inner operator."
+                            let! env', f' = op args block
+                            return env', f >> f'
+                        }
+                    | _ -> failwith "TODO")
+                |>> (fun (env, modify) ->
+                    let state' = movie.ModifySpeaker(state, modify)
+                    env, state')
+        }
+
+    //
 
     let rec runStatement
         (movie: Frame.MovieBuilder)
-        (env: IEvalEnv, state: Frame.MovieState)
         (statement: Parser.Statement)
+        (env: IEvalEnv, state: Frame.MovieState)
         : Result<IEvalEnv * Frame.MovieState, string> =
         match statement with
         | Parser.Statement.Do(expr, block) ->
-            monad {
-                let! v = expr |> tryEval env
-
-                match v with
+            expr
+            |> tryEval env
+            >>= function
                 | Value.InnerOperatorApplied(s, args) ->
                     match s with
-                    | "initialize" ->
-                        match args, block with
-                        | [||], Some block -> return failwith "TODO"
-                        | _ -> return! Error "Invalid argument types."
-                    | "add-speaker" ->
-                        match args, block with
-                        | [| Value.String name |], Some block -> return failwith "TODO"
-                        | _ -> return! Error "Invalid argument types."
-                    | "appearance" ->
-                        match args, block with
-                        | [||], Some block ->
-                            return!
-                                (Ok(env, id), block)
-                                ||> Seq.fold (fun acc statement ->
-                                    monad {
-                                        let! env, f = acc
-
-                                        match statement with
-                                        | Parser.Statement.Do(expr, block) ->
-                                            let! v = expr |> tryEval env
-
-                                            match v with
-                                            | Value.InnerOperatorApplied(s, args) ->
-                                                match s with
-                                                | "on" ->
-                                                    match args, block with
-                                                    | [| Value.String layerPath |], None ->
-                                                        let segments = layerPath |> String.split [ "/" ]
-
-                                                        let f' = f >> Frame.SpeakerState.turnOn segments
-
-                                                        return env, f'
-                                                    | _ -> return! Error "Invalid argument types."
-                                                | _ -> return! Error "Unknown inner operator."
-                                            | _ ->
-                                                return!
-                                                    Error
-                                                        "Invalid expression as a statement; must be an inner operator."
-                                        | _ -> return failwith "TODO"
-                                    })
-                                |>> (fun (env, modify) ->
-                                    let state' = movie.ModifySpeaker(state, modify)
-                                    env, state')
-                        | _ -> return! Error "Invalid argument types."
-                    | _ -> return! Error "Unknown inner operator."
-                | _ -> return! Error "Invalid expression as a statement; must be an inner operator."
-            }
+                    | "initialize" -> runInitialize movie args block (env, state)
+                    | "add-speaker" -> runAddSpeaker movie args block (env, state)
+                    | "appearance" -> runAppearance movie args block (env, state)
+                    | _ -> Error "Unknown inner operator."
+                | _ -> Error "Invalid expression as a statement; must be an inner operator."
         | Parser.Statement.At(expr, block) ->
             monad {
-                let! v = expr |> tryEval env
+                let! name = expr |> tryEval env >>= Value.tryAsString
 
-                match v with
-                | Value.String name ->
-                    let state' = movie.SetSpeaker(state, name)
+                let state' = movie.SetSpeaker(state, name)
 
-                    match block with
-                    | None -> return (env, state')
-                    | Some block ->
-                        // TODO: ローカルステートメントを記述出来るようにする．
-                        return!
-                            (Ok(env, state'), block)
-                            ||> Seq.fold (fun acc statement ->
-                                monad {
-                                    let! acc = acc
-                                    return! runStatement movie acc statement
-                                })
-                | _ -> return! Error "Invalid speaker name; must be a string."
+                match block with
+                | None -> return (env, state')
+                | Some block ->
+                    // TODO: ローカルステートメントを記述出来るようにする．
+                    return!
+                        (Ok(env, state'), block)
+                        ||> Seq.fold (fun acc statement -> acc >>= runStatement movie statement)
             }
         | Parser.Statement.Gets(_, _) -> Error "Assignment is not allowed at the top level."
         | Parser.Statement.Talk talk -> Ok(env, movie.YieldFrame(state, talk.Subtitle, talk.Speech))
 
     //
 
-    let run (movie: Frame.MovieBuilder) (env: IEvalEnv, state: Frame.MovieState) (ast: Parser.AST) =
+    let run (movie: Frame.MovieBuilder) (ast: Parser.AST) (env: IEvalEnv, state: Frame.MovieState) =
         (Ok(env, state), ast.Statements)
-        ||> Seq.fold (fun acc statement ->
-            monad {
-                let! env, state = acc
-                return! runStatement movie (env, state) statement
-            })
+        ||> Seq.fold (fun acc statement -> acc >>= runStatement movie statement)
