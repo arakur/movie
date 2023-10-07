@@ -77,6 +77,22 @@ type Numeral =
         | Float(f, Some m) when m = measure -> Ok f
         | _ -> Error(sprintf "Invalid type; expected float with %s." measure)
 
+    static member tryAdd lhs rhs =
+        match lhs, rhs with
+        | Int(i0, m0), Int(i1, m1) when m0 = m1 -> Ok(Int(i0 + i1, m0))
+        | Float(f0, m0), Float(f1, m1) when m0 = m1 -> Ok(Float(f0 + f1, m0))
+        | Int(i0, m0), Float(f1, m1) when m0 = m1 -> Ok(Float(float i0 + f1, m0))
+        | Float(f0, m0), Int(i1, m1) when m0 = m1 -> Ok(Float(f0 + float i1, m0))
+        | _ -> Error "Invalid type; expected same measure."
+
+    static member trySub lhs rhs =
+        match lhs, rhs with
+        | Int(i0, m0), Int(i1, m1) when m0 = m1 -> Ok(Int(i0 - i1, m0))
+        | Float(f0, m0), Float(f1, m1) when m0 = m1 -> Ok(Float(f0 - f1, m0))
+        | Int(i0, m0), Float(f1, m1) when m0 = m1 -> Ok(Float(float i0 - f1, m0))
+        | Float(f0, m0), Int(i1, m1) when m0 = m1 -> Ok(Float(f0 - float i1, m0))
+        | _ -> Error "Invalid type; expected same measure."
+
 type BinaryOperator = string
 
 type InnerOperator = string
@@ -134,7 +150,24 @@ type EvalEnv
         innerOperators: Map<InnerOperator, int>,
         binaryOperators: Map<BinaryOperator, Numeral -> Numeral -> Result<Numeral, string>>
     ) =
-    new() = EvalEnv(Map.empty, Map.empty, Map.empty)
+    static member prelude() : EvalEnv =
+        let innerOperators =
+            [ "initialize", 0; "add-speaker", 1; "appearance", 0; "on", 1; "hflip", 0 ]
+            |> Map.ofSeq
+
+        let variables =
+            innerOperators
+            |> Map.toSeq
+            |> Seq.map (fun (name, arity) ->
+                if arity = 0 then
+                    name, Value.InnerOperatorApplied(name, [||])
+                else
+                    name, Value.InnerOperator name)
+            |> Map.ofSeq
+
+        let binaryOperators = [ "+", Numeral.tryAdd; "-", Numeral.trySub ] |> Map.ofSeq
+
+        EvalEnv(variables, innerOperators, binaryOperators)
 
     member val Variables = variables
     member val InnerOperators = innerOperators
@@ -328,8 +361,8 @@ module Interpreter =
     //
 
     type private PosState =
-        { X: option<int<Measure.px>>
-          Y: option<int<Measure.px>> }
+        { X: int<Measure.px> option
+          Y: int<Measure.px> option }
 
     let private runPos (block: Parser.Statement list option) (env: IEvalEnv, posState: PosState option) =
         block
@@ -428,48 +461,43 @@ module Interpreter =
               Size = None
               Background = None }
 
-        monad {
-            do! args |> ArrayExt.tryAsEmpty "Expected no arguments."
-            return! block |> Option.toResultWith "Expected block."
-        }
-        >>= Seq.fold
-            (fun acc statement ->
-                monad {
-                    let! env, config = acc
+        let runInitializeStatement (acc: Result<IEvalEnv * InitializeState, string>) (statement: Parser.Statement) =
+            monad {
+                let! env, config = acc
 
-                    match statement with
-                    | Parser.Statement.Gets(targetExpr, contentExpr) ->
-                        let! target = targetExpr |> tryEval env >>= Value.tryAsString
+                match statement with
+                | Parser.Statement.Gets(targetExpr, contentExpr) ->
+                    let! target = targetExpr |> tryEval env >>= Value.tryAsString
 
-                        match target with
-                        | "background" ->
-                            // TODO: 色指定にも対応する．
-                            let! background = contentExpr |> tryEval env >>= Value.tryAsString
+                    match target with
+                    | "background" ->
+                        // TODO: 色指定にも対応する．
+                        let! background = contentExpr |> tryEval env >>= Value.tryAsString
 
-                            let config' =
-                                { config with
-                                    Background = Some(Frame.Background.File background) }
+                        let config' =
+                            { config with
+                                Background = Some(Frame.Background.File background) }
 
-                            return env, config'
-                        | _ -> return! Error "Invalid assignment."
-                    | Parser.Statement.Do(expr, optBlock) ->
-                        let! fieldName = expr |> tryEval env >>= Value.tryAsString
+                        return env, config'
+                    | _ -> return! Error "Invalid assignment."
+                | Parser.Statement.Do(expr, optBlock) ->
+                    let! fieldName = expr |> tryEval env >>= Value.tryAsString
 
-                        match fieldName with
-                        | "font" ->
-                            let! env', font' = runFont optBlock (env, config.Font)
-                            return env', { config with Font = font' }
-                        | "pos" ->
-                            let! env', pos' = runPos optBlock (env, config.Pos)
-                            return env', { config with Pos = pos' }
-                        | "size" ->
-                            let! env', size' = runSize optBlock (env, config.Size)
-                            return env', { config with Size = size' }
-                        | _ -> return! Error "Unknown field name in initialize."
-                    | _ -> return! Error "Invalid statement."
-                })
-            (Ok(env, initialState))
-        |> Result.bind (fun (env, config) ->
+                    match fieldName with
+                    | "font" ->
+                        let! env', font' = runFont optBlock (env, config.Font)
+                        return env', { config with Font = font' }
+                    | "pos" ->
+                        let! env', pos' = runPos optBlock (env, config.Pos)
+                        return env', { config with Pos = pos' }
+                    | "size" ->
+                        let! env', size' = runSize optBlock (env, config.Size)
+                        return env', { config with Size = size' }
+                    | _ -> return! Error "Unknown field name in initialize."
+                | _ -> return! Error "Invalid statement."
+            }
+
+        let buildConfig (env: IEvalEnv, config: InitializeState) =
             monad {
                 // TODO: デフォルト値を設定する．
                 let! font = config.Font |> Option.toResultWith "Font is not set."
@@ -502,13 +530,61 @@ module Interpreter =
 
                 let state' = movie.Initialize((), config')
                 return env, state'
-            })
+            }
+
+        monad {
+            do! args |> ArrayExt.tryAsEmpty "Expected no arguments."
+            let! block' = block |> Option.toResultWith "Expected block."
+            let! config = (Ok(env, initialState), block') ||> Seq.fold runInitializeStatement
+            return! buildConfig config
+        }
 
     //
 
     type private AddSpeakerAppearanceState =
         { Appearance: string option
           Pos: PosState option }
+
+    let private runAddSpeakerAppearance
+        (block: Parser.Statement list option)
+        (env: IEvalEnv, app: AddSpeakerAppearanceState option)
+        =
+        block
+        |> Option.toResultWith "Expected block."
+        >>= Seq.fold
+            (fun acc statement ->
+                monad {
+                    let! env, app = acc
+
+                    let app' = app |> Option.defaultValue { Appearance = None; Pos = None }
+
+                    match statement with
+                    | Parser.Statement.Do(expr, optBlock) ->
+                        let! fieldName = expr |> tryEval env >>= Value.tryAsString
+
+                        match fieldName with
+                        | "pos" ->
+                            let! env', pos' = runPos optBlock (env, app'.Pos)
+                            let app'' = { app' with Pos = pos' }
+                            return env', Some app''
+                        | _ -> return! Error "Unknown field name in appearance."
+                    | Parser.Statement.Gets(targetExpr, contentExpr) ->
+                        let! target = targetExpr |> tryEval env >>= Value.tryAsString
+                        let! content = contentExpr |> tryEval env
+
+                        match target with
+                        | "appearance" ->
+                            let! appearance = content |> Value.tryAsString
+
+                            let app'' =
+                                { app' with
+                                    Appearance = Some appearance }
+
+                            return env, Some app''
+                        | _ -> return! Error "Unknown field name in appearance."
+                    | _ -> return! Error "Invalid statement."
+                })
+            (Ok(env, app))
 
     type private AddSpeakerState =
         { Name: string option
@@ -522,10 +598,90 @@ module Interpreter =
         (block: Parser.Statement list option)
         (env: IEvalEnv, state: Frame.MovieState)
         : Result<IEvalEnv * Frame.MovieState, string> =
+        let initialState =
+            { Name = None
+              Style = None
+              Font = None
+              Appearance = None }
+
+        let runAddSpeakerStatement (acc: Result<IEvalEnv * AddSpeakerState, string>) (statement: Parser.Statement) =
+            monad {
+                let! env, config = acc
+
+                match statement with
+                | Parser.Statement.Gets(targetExpr, contentExpr) ->
+                    let! target = targetExpr |> tryEval env >>= Value.tryAsString
+
+                    match target with
+                    | "name" ->
+                        let! name = contentExpr |> tryEval env >>= Value.tryAsString
+
+                        let config' = { config with Name = Some name }
+
+                        return env, config'
+                    | "style" ->
+                        let! style = contentExpr |> tryEval env >>= Value.tryAsString
+
+                        let config' = { config with Style = Some style }
+
+                        return env, config'
+                    | _ -> return! Error "Invalid assignment."
+                | Parser.Statement.Do(expr, optBlock) ->
+                    let! fieldName = expr |> tryEval env >>= Value.tryAsString
+
+                    match fieldName with
+                    | "font" ->
+                        let! env', font' = runFont optBlock (env, config.Font)
+                        return env', { config with Font = font' }
+                    | "appearance" ->
+                        let! env', app' = runAddSpeakerAppearance optBlock (env, config.Appearance)
+                        return env', { config with Appearance = app' }
+                    | _ -> return! Error "Unknown field name in add-speaker."
+                | _ -> return! Error "Invalid statement."
+            }
+
+        let buildConfig speakerName (env: IEvalEnv, config: AddSpeakerState) =
+            monad {
+                let! name = config.Name |> Option.toResultWith "Name is not set."
+                let! style = config.Style |> Option.toResultWith "Style is not set."
+                let! font = config.Font |> Option.toResultWith "Font is not set."
+                let! appearance = config.Appearance |> Option.toResultWith "Appearance is not set."
+
+                let fontColor = font.Color
+                let fontSize = font.Size
+                let fontWeight = font.Weight
+                let fontFamily = font.Family
+
+                let! appearancePos = appearance.Pos |> Option.toResultWith "Pos is not set."
+
+                let! posX = appearancePos.X |> Option.toResultWith "Pos X is not set."
+                let! posY = appearancePos.Y |> Option.toResultWith "Pos Y is not set."
+
+                let! appearance = appearance.Appearance |> Option.toResultWith "Appearance is not set."
+
+                let config' =
+                    { Frame.SpeakerState.Name = name
+                      Frame.SpeakerState.Style = style
+                      Frame.SpeakerState.Font =
+                        Frame.SpeakerFont(
+                            ?color = fontColor,
+                            ?size = fontSize,
+                            ?weight = fontWeight,
+                            ?family = fontFamily
+                        )
+                      Frame.SpeakerState.Appearance =
+                        { Appearance = Appearance.Appearance.LoadDirectory appearance
+                          Pos = { X = posX; Y = posY } } }
+
+                let state' = movie.AddSpeaker(state, speakerName, config')
+                return env, state'
+            }
+
         monad {
-            let! name = args |> ArrayExt.tryAsSingleton "Expected one argument." >>= Value.tryAsString
-            let! block = block |> Option.toResultWith "Expected block."
-            return failwith "TODO" // TODO
+            let! speakerName = args |> ArrayExt.tryAsSingleton "Expected one argument." >>= Value.tryAsString
+            let! block' = block |> Option.toResultWith "Expected block."
+            let! config = (Ok(env, initialState), block') ||> Seq.fold runAddSpeakerStatement
+            return! buildConfig speakerName config
         }
 
     //
@@ -547,6 +703,17 @@ module Interpreter =
 
                       let segments = layerPath |> String.split [ "/" ]
                       let f' = Frame.SpeakerState.turnOn segments
+                      return env, f'
+                  }
+              "hflip",
+              fun (args: Value array) (block: Parser.Statement list option) ->
+                  monad {
+                      do! args |> ArrayExt.tryAsEmpty "Expected no arguments."
+
+                      if block <> None then
+                          do! Error "Expected no block."
+
+                      let f' = Frame.SpeakerState.hFlip
                       return env, f'
                   } ]
             |> Map.ofSeq
@@ -597,7 +764,7 @@ module Interpreter =
                     | "add-speaker" -> runAddSpeaker movie args block (env, state)
                     | "appearance" -> runAppearance movie args block (env, state)
                     | _ -> Error "Unknown inner operator."
-                | _ -> Error "Invalid expression as a statement; must be an inner operator."
+                | s -> Error "Invalid expression as a statement; must be an inner operator."
         | Parser.Statement.At(expr, block) ->
             monad {
                 let! name = expr |> tryEval env >>= Value.tryAsString

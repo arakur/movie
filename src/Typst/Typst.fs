@@ -72,7 +72,10 @@ type TypstSource =
                 (this.Text.Weight.Compose())
                 (this.Text.Fill.Compose())
 
-        sprintf "%s\n%s\n%s" page text this.Content
+        let content =
+            this.Content.Replace("\n", "\\\n")
+
+        sprintf "%s\n%s\n%s" page text content
 
 type Typst(path: string) =
     member __.CompileAsync(src: TypstSource, outPath: string) =
