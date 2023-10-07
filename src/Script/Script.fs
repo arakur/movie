@@ -499,7 +499,6 @@ module Interpreter =
 
         let buildConfig (env: IEvalEnv, config: InitializeState) =
             monad {
-                // TODO: デフォルト値を設定する．
                 let! font = config.Font |> Option.toResultWith "Font is not set."
                 let! pos = config.Pos |> Option.toResultWith "Pos is not set."
                 let! size = config.Size |> Option.toResultWith "Size is not set."
@@ -740,7 +739,7 @@ module Interpreter =
                             let! env', f' = op args block
                             return env', f >> f'
                         }
-                    | _ -> failwith "TODO")
+                    | _ -> Error "Invalid statement.")
                 |>> (fun (env, modify) ->
                     let state' = movie.ModifySpeaker(state, modify)
                     env, state')

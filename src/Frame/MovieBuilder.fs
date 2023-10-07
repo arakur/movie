@@ -88,6 +88,7 @@ type SubtitleState =
 
 [<RequireQualifiedAccess>]
 type Background =
+    // TODO: 静止画背景．
     | File of string
     | Color of Color
 
