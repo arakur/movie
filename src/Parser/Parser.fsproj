@@ -4,14 +4,16 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="Lexer.fs" />
+    <Compile Include="Intermediate.fs" />
+    <Compile Include="Expr.fs" />
+    <Compile Include="AST.fs" />
     <Compile Include="Parser.fs" />
-    <Compile Include="Script.fs" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="FParsec" Version="1.1.1" />
+    <ProjectReference Include="..\Script\Script.fsproj" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="FSharpPlus" Version="1.4.1" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\Frame\Frame.fsproj" />
   </ItemGroup>
 </Project>

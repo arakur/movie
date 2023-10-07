@@ -1,13 +1,12 @@
 ﻿open Env
 open Frame.MovieBuilder
 open Script
+open Parser
 
 let script = System.IO.File.ReadAllText "script.txt"
 
-let lines = Lexer.nodesFrom script
-
 let ast =
-    Parser.AST.from lines
+    parse script
     |> function
         | Ok ast -> ast
         | Error e -> failwith e

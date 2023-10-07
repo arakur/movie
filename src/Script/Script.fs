@@ -93,16 +93,14 @@ type Numeral =
         | Float(f0, m0), Int(i1, m1) when m0 = m1 -> Ok(Float(f0 - float i1, m0))
         | _ -> Error "Invalid type; expected same measure."
 
-type BinaryOperator = string
-
 type InnerOperator = string
 
 [<RequireQualifiedAccess>]
 type Value =
     | Numeral of Numeral
     | String of string
-    | BinaryOperator of BinaryOperator
-    | BinaryOperatorLeftApplied of BinaryOperator * Value
+    | BinaryOperator of string
+    | BinaryOperatorLeftApplied of string * Value
     | Tuple of Value array
     | InnerOperator of InnerOperator
     | InnerOperatorPartiallyApplied of InnerOperator * arity: int * Value RevList
@@ -142,13 +140,13 @@ type Value =
 type IEvalEnv =
     abstract member TryVariable: string -> Value option
     abstract member TryArityInnerOperator: InnerOperator -> int option
-    abstract member TryBinaryOperator: BinaryOperator -> (Numeral -> Numeral -> Result<Numeral, string>) option
+    abstract member TryBinaryOperator: string -> (Numeral -> Numeral -> Result<Numeral, string>) option
 
 type EvalEnv
     (
         variables: Map<string, Value>,
         innerOperators: Map<InnerOperator, int>,
-        binaryOperators: Map<BinaryOperator, Numeral -> Numeral -> Result<Numeral, string>>
+        binaryOperators: Map<string, Numeral -> Numeral -> Result<Numeral, string>>
     ) =
     static member prelude() : EvalEnv =
         let innerOperators =
@@ -179,7 +177,7 @@ type EvalEnv
     member this.WithInnerOperator(inner: InnerOperator, arity: int) =
         EvalEnv(this.Variables, this.InnerOperators.Add(inner, arity), this.BinaryOperators)
 
-    member this.WithBinaryOperator(bin: BinaryOperator, f: Numeral -> Numeral -> Result<Numeral, string>) =
+    member this.WithBinaryOperator(bin: string, f: Numeral -> Numeral -> Result<Numeral, string>) =
         EvalEnv(this.Variables, this.InnerOperators, this.BinaryOperators.Add(bin, f))
 
     member this.WithInnerOperatorSynonym(var: string, inner: InnerOperator) =
@@ -232,9 +230,9 @@ module Value =
                 Ok(Value.InnerOperatorPartiallyApplied(op, arity, args |> RevList.add arg))
 
 module Interpreter =
-    let rec tryEval (env: IEvalEnv) (expr: Parser.Expr) : Result<Value, string> =
+    let rec tryEval (env: IEvalEnv) (expr: Expr) : Result<Value, string> =
         match expr with
-        | Parser.Expr.Numeral(n, m) ->
+        | Expr.Numeral(n, m) ->
             if n |> String.contains '.' then
                 try
                     Ok(Value.Numeral(Numeral.Float(float n, m)))
@@ -245,9 +243,9 @@ module Interpreter =
                     Ok(Value.Numeral(Numeral.Int(int n, m)))
                 with _ ->
                     Error("Invalid int.")
-        | Parser.Expr.String s -> Ok(Value.String s)
-        | Parser.Expr.Variable v -> env.TryVariable v |> Option.toResultWith (sprintf "Variable '%s' not found." v)
-        | Parser.Expr.App(f, args) ->
+        | Expr.String s -> Ok(Value.String s)
+        | Expr.Variable v -> env.TryVariable v |> Option.toResultWith (sprintf "Variable '%s' not found." v)
+        | Expr.App(f, args) ->
             (f |> tryEval env, args)
             ||> Seq.fold (fun acc arg ->
                 monad {
@@ -255,7 +253,7 @@ module Interpreter =
                     let! arg = arg |> tryEval env
                     return! Value.tryApply env arg acc
                 })
-        | Parser.Expr.BinaryOperator(op, expr0, expr1) ->
+        | Expr.BinaryOperator(op, expr0, expr1) ->
             monad {
                 let! v0 = expr0 |> tryEval env
                 let! v1 = expr1 |> tryEval env
@@ -268,7 +266,7 @@ module Interpreter =
                 | Value.Numeral n0, Value.Numeral n1 -> return! f n0 n1 |>> Value.Numeral
                 | _ -> return! Error "Invalid arguments."
             }
-        | Parser.Expr.Tuple exprs ->
+        | Expr.Tuple exprs ->
             exprs |> List.map (tryEval env) |> ResultExt.sequence
             |>> Seq.toArray
             |>> Value.Tuple
@@ -281,7 +279,7 @@ module Interpreter =
           Size: float<Measure.pt> option
           Weight: Typst.Weight option }
 
-    let private runFont (block: Parser.Statement list option) (env: IEvalEnv, fontState: FontState option) =
+    let private runFont (block: Statement list option) (env: IEvalEnv, fontState: FontState option) =
         block
         |> Option.toResultWith "Expected block."
         >>= Seq.fold
@@ -290,7 +288,7 @@ module Interpreter =
                     let! env, font = acc
 
                     match statement with
-                    | Parser.Statement.Gets(targetExpr, contentExpr) ->
+                    | Statement.Gets(targetExpr, contentExpr) ->
                         let! target = targetExpr |> tryEval env
                         let! content = contentExpr |> tryEval env
 
@@ -364,7 +362,7 @@ module Interpreter =
         { X: int<Measure.px> option
           Y: int<Measure.px> option }
 
-    let private runPos (block: Parser.Statement list option) (env: IEvalEnv, posState: PosState option) =
+    let private runPos (block: Statement list option) (env: IEvalEnv, posState: PosState option) =
         block
         |> Option.toResultWith "Expected block."
         >>= Seq.fold
@@ -373,7 +371,7 @@ module Interpreter =
                     let! env, pos = acc
 
                     match statement with
-                    | Parser.Statement.Gets(targetExpr, contentExpr) ->
+                    | Statement.Gets(targetExpr, contentExpr) ->
                         let! target = targetExpr |> tryEval env >>= Value.tryAsString
 
                         let pos' = pos |> Option.defaultValue { X = None; Y = None }
@@ -404,7 +402,7 @@ module Interpreter =
         { Width: int<Measure.px> option
           Height: int<Measure.px> option }
 
-    let private runSize (block: Parser.Statement list option) (env: IEvalEnv, sizeState: InitializeSizeState option) =
+    let private runSize (block: Statement list option) (env: IEvalEnv, sizeState: InitializeSizeState option) =
         block
         |> Option.toResultWith "Expected block."
         >>= (fun block' ->
@@ -414,7 +412,7 @@ module Interpreter =
                     let! env, size = acc
 
                     match statement with
-                    | Parser.Statement.Gets(targetExpr, contentExpr) ->
+                    | Statement.Gets(targetExpr, contentExpr) ->
                         let! target = targetExpr |> tryEval env
                         let! content = contentExpr |> tryEval env
 
@@ -452,7 +450,7 @@ module Interpreter =
     let runInitialize
         (movie: Frame.MovieBuilder)
         (args: Value array)
-        (block: Parser.Statement list option)
+        (block: Statement list option)
         (env: IEvalEnv, _state: Frame.MovieState)
         : Result<IEvalEnv * Frame.MovieState, string> =
         let initialState =
@@ -461,12 +459,12 @@ module Interpreter =
               Size = None
               Background = None }
 
-        let runInitializeStatement (acc: Result<IEvalEnv * InitializeState, string>) (statement: Parser.Statement) =
+        let runInitializeStatement (acc: Result<IEvalEnv * InitializeState, string>) (statement: Statement) =
             monad {
                 let! env, config = acc
 
                 match statement with
-                | Parser.Statement.Gets(targetExpr, contentExpr) ->
+                | Statement.Gets(targetExpr, contentExpr) ->
                     let! target = targetExpr |> tryEval env >>= Value.tryAsString
 
                     match target with
@@ -480,7 +478,7 @@ module Interpreter =
 
                         return env, config'
                     | _ -> return! Error "Invalid assignment."
-                | Parser.Statement.Do(expr, optBlock) ->
+                | Statement.Do(expr, optBlock) ->
                     let! fieldName = expr |> tryEval env >>= Value.tryAsString
 
                     match fieldName with
@@ -545,7 +543,7 @@ module Interpreter =
           Pos: PosState option }
 
     let private runAddSpeakerAppearance
-        (block: Parser.Statement list option)
+        (block: Statement list option)
         (env: IEvalEnv, app: AddSpeakerAppearanceState option)
         =
         block
@@ -558,7 +556,7 @@ module Interpreter =
                     let app' = app |> Option.defaultValue { Appearance = None; Pos = None }
 
                     match statement with
-                    | Parser.Statement.Do(expr, optBlock) ->
+                    | Statement.Do(expr, optBlock) ->
                         let! fieldName = expr |> tryEval env >>= Value.tryAsString
 
                         match fieldName with
@@ -567,7 +565,7 @@ module Interpreter =
                             let app'' = { app' with Pos = pos' }
                             return env', Some app''
                         | _ -> return! Error "Unknown field name in appearance."
-                    | Parser.Statement.Gets(targetExpr, contentExpr) ->
+                    | Statement.Gets(targetExpr, contentExpr) ->
                         let! target = targetExpr |> tryEval env >>= Value.tryAsString
                         let! content = contentExpr |> tryEval env
 
@@ -594,7 +592,7 @@ module Interpreter =
     let private runAddSpeaker
         (movie: Frame.MovieBuilder)
         (args: Value array)
-        (block: Parser.Statement list option)
+        (block: Statement list option)
         (env: IEvalEnv, state: Frame.MovieState)
         : Result<IEvalEnv * Frame.MovieState, string> =
         let initialState =
@@ -603,12 +601,12 @@ module Interpreter =
               Font = None
               Appearance = None }
 
-        let runAddSpeakerStatement (acc: Result<IEvalEnv * AddSpeakerState, string>) (statement: Parser.Statement) =
+        let runAddSpeakerStatement (acc: Result<IEvalEnv * AddSpeakerState, string>) (statement: Statement) =
             monad {
                 let! env, config = acc
 
                 match statement with
-                | Parser.Statement.Gets(targetExpr, contentExpr) ->
+                | Statement.Gets(targetExpr, contentExpr) ->
                     let! target = targetExpr |> tryEval env >>= Value.tryAsString
 
                     match target with
@@ -625,7 +623,7 @@ module Interpreter =
 
                         return env, config'
                     | _ -> return! Error "Invalid assignment."
-                | Parser.Statement.Do(expr, optBlock) ->
+                | Statement.Do(expr, optBlock) ->
                     let! fieldName = expr |> tryEval env >>= Value.tryAsString
 
                     match fieldName with
@@ -688,12 +686,12 @@ module Interpreter =
     let runAppearance
         (movie: Frame.MovieBuilder)
         (args: Value array)
-        (block: Parser.Statement list option)
+        (block: Statement list option)
         (env: IEvalEnv, state: Frame.MovieState)
         : Result<IEvalEnv * Frame.MovieState, string> =
         let operators =
             [ "on",
-              fun (args: Value array) (block: Parser.Statement list option) ->
+              fun (args: Value array) (block: Statement list option) ->
                   monad {
                       let! layerPath = args |> ArrayExt.tryAsSingleton "Expected one argument." >>= Value.tryAsString
 
@@ -705,7 +703,7 @@ module Interpreter =
                       return env, f'
                   }
               "hflip",
-              fun (args: Value array) (block: Parser.Statement list option) ->
+              fun (args: Value array) (block: Statement list option) ->
                   monad {
                       do! args |> ArrayExt.tryAsEmpty "Expected no arguments."
 
@@ -726,7 +724,7 @@ module Interpreter =
                 (Ok(env, id), block')
                 ||> Seq.fold (fun acc statement ->
                     match statement with
-                    | Parser.Statement.Do(expr, block) ->
+                    | Statement.Do(expr, block) ->
                         monad {
                             let! env, f = acc
 
@@ -749,11 +747,11 @@ module Interpreter =
 
     let rec runStatement
         (movie: Frame.MovieBuilder)
-        (statement: Parser.Statement)
+        (statement: Statement)
         (env: IEvalEnv, state: Frame.MovieState)
         : Result<IEvalEnv * Frame.MovieState, string> =
         match statement with
-        | Parser.Statement.Do(expr, block) ->
+        | Statement.Do(expr, block) ->
             expr
             |> tryEval env
             >>= function
@@ -764,7 +762,7 @@ module Interpreter =
                     | "appearance" -> runAppearance movie args block (env, state)
                     | _ -> Error "Unknown inner operator."
                 | s -> Error "Invalid expression as a statement; must be an inner operator."
-        | Parser.Statement.At(expr, block) ->
+        | Statement.At(expr, block) ->
             monad {
                 let! name = expr |> tryEval env >>= Value.tryAsString
 
@@ -778,11 +776,11 @@ module Interpreter =
                         (Ok(env, state'), block)
                         ||> Seq.fold (fun acc statement -> acc >>= runStatement movie statement)
             }
-        | Parser.Statement.Gets(_, _) -> Error "Assignment is not allowed at the top level."
-        | Parser.Statement.Talk talk -> Ok(env, movie.YieldFrame(state, talk.Subtitle, talk.Speech))
+        | Statement.Gets(_, _) -> Error "Assignment is not allowed at the top level."
+        | Statement.Talk talk -> Ok(env, movie.YieldFrame(state, talk.Subtitle, talk.Speech))
 
     //
 
-    let run (movie: Frame.MovieBuilder) (ast: Parser.AST) (env: IEvalEnv, state: Frame.MovieState) =
+    let run (movie: Frame.MovieBuilder) (ast: AST) (env: IEvalEnv, state: Frame.MovieState) =
         (Ok(env, state), ast.Statements)
         ||> Seq.fold (fun acc statement -> acc >>= runStatement movie statement)
