@@ -105,6 +105,20 @@ type MovieState =
       Subtitle: SubtitleState
       Background: Background }
 
+    static member empty =
+        { Frames = Deque.empty
+          Speakers = Map.empty
+          CurrentSpeaker = None
+          Subtitle =
+            { Font =
+                { Color = RGB(0, 0, 0)
+                  Size = 0.0<pt>
+                  Weight = Typst.Weight.OfInt 0
+                  Family = "" }
+              Pos = { X = 0<px>; Y = 0<px> }
+              Size = { Width = 0<px>; Height = 0<px> } }
+          Background = Background.Color(RGB(0, 0, 0)) }
+
 type Initialize =
     { Font: SubtitleFont
       Pos: Pos
