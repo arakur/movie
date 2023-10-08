@@ -1,9 +1,9 @@
-﻿module private Parser.AST
+﻿module Parser.AST
 
 open Script
 open FSharpPlus
 
-let rec from (nodes: Lexer.Node list) =
+let rec private from (nodes: Lexer.Node list) =
     let rec statement (intermediate: Intermediate) =
         match intermediate with
         | Intermediate.Do e -> Expr.tryFrom e |>> (fun e -> Do(e, None))
@@ -63,3 +63,9 @@ let rec from (nodes: Lexer.Node list) =
             | Lexer.Node.EndIndent -> Ok(List.rev currentRev, rest)
 
     statements nodes [] |>> (fun (statements, _) -> { Statements = statements })
+
+
+let parse (source: string) =
+    source.Replace("\r\n", "\n") // Preprocess.
+    |> Lexer.nodesFrom
+    |> from

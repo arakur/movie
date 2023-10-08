@@ -3,25 +3,25 @@ open Frame.MovieBuilder
 open Script
 open Parser
 
-let script = System.IO.File.ReadAllText "script.txt"
+open FSharpPlus
 
-let ast =
-    parse script
-    |> function
-        | Ok ast -> ast
-        | Error e -> failwith e
+let script = "script.txt"
 
-let evalEnv = EvalEnv.prelude().WithInnerOperatorSynonym("立ち絵", "appearance")
-
-let movieState =
-    Interpreter.run movie ast (evalEnv, Frame.MovieState.empty)
-    |> function
-        | Ok(_, state) -> state
-        | Error e -> failwith e
+let output = "output/output.mp4"
 
 //
 
-let output = "output/output.mp4"
+let evalEnv = EvalEnv.prelude().WithInnerOperatorSynonym("立ち絵", "appearance")
+
+//
+
+let movieState =
+    script
+    |> System.IO.File.ReadAllText
+    |> AST.parse
+    |> Result.defaultWith failwith
+    |> Interpreter.build movie evalEnv
+    |> Result.defaultWith failwith
 
 do
     printfn "Ready for rendering..."

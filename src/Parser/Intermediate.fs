@@ -4,13 +4,15 @@ open Script
 
 open FSharpPlus
 
+type BinaryOperatorName = string
+
 [<RequireQualifiedAccess>]
 type private IntermediateExpr =
-    | Numeral of string * measure: string option
+    | Numeral of string * _measure: string option
     | String of string
     | Variable of string
     | App of IntermediateExpr * IntermediateExpr list
-    | BinOpSeries of init: (IntermediateExpr * BinaryOperator) list * last: IntermediateExpr
+    | BinOpSeries of _init: (IntermediateExpr * BinaryOperatorName) list * _last: IntermediateExpr
     | Tuple of IntermediateExpr list
 
 [<RequireQualifiedAccess>]
@@ -35,7 +37,7 @@ type private Intermediate =
 
         let binOp (node: Lexer.LineNode) =
             match node with
-            | Lexer.LineNode.OtherOperator(value) -> Ok(BinaryOperator.Other value)
+            | Lexer.LineNode.OtherOperator value -> Ok(Script.BinaryOperator.Other value)
             | _ -> Error "Expected bin op."
 
         let parseBinOp (line: Lexer.LineNode list) =
@@ -88,7 +90,7 @@ type private Intermediate =
 
         and parseBinOpSeries
             (line: Lexer.LineNode list)
-            : Result<(IntermediateExpr * BinaryOperator) list * IntermediateExpr * Lexer.LineNode list, string> =
+            : Result<(IntermediateExpr * BinaryOperatorName) list * IntermediateExpr * Lexer.LineNode list, string> =
             let tryTermBinOp =
                 line |> parseTerm |>> (fun (term, rest) -> term, rest, parseBinOp rest)
 

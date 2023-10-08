@@ -93,8 +93,6 @@ type Numeral =
         | Float(f0, m0), Int(i1, m1) when m0 = m1 -> Ok(Float(f0 - float i1, m0))
         | _ -> Error "Invalid type; expected same measure."
 
-type InnerOperator = string
-
 [<RequireQualifiedAccess>]
 type Value =
     | Numeral of Numeral
@@ -102,9 +100,9 @@ type Value =
     | BinaryOperator of string
     | BinaryOperatorLeftApplied of string * Value
     | Tuple of Value array
-    | InnerOperator of InnerOperator
-    | InnerOperatorPartiallyApplied of InnerOperator * arity: int * Value RevList
-    | InnerOperatorApplied of InnerOperator * Value array
+    | InnerOperator of string
+    | InnerOperatorPartiallyApplied of string * arity: int * Value RevList
+    | InnerOperatorApplied of string * Value array
 
     static member tryAsNumeral this =
         match this with
@@ -137,21 +135,57 @@ type Value =
         | InnerOperatorApplied(inner, args) -> Ok(inner, args)
         | _ -> Error "Invalid type; expected inner operator with full arguments."
 
+    static member tryAdd lhs rhs =
+        match lhs, rhs with
+        | Numeral lhs, Numeral rhs -> Numeral.tryAdd lhs rhs |>> Value.Numeral
+        | _ -> Error "Invalid type; expected numeral."
+
+    static member trySub lhs rhs =
+        match lhs, rhs with
+        | Numeral lhs, Numeral rhs -> Numeral.trySub lhs rhs |>> Value.Numeral
+        | _ -> Error "Invalid type; expected numeral."
+
+module private InnerOperator =
+    [<Literal>]
+    let initialize = "initialize"
+
+    [<Literal>]
+    let addSpeaker = "add-speaker"
+
+    [<Literal>]
+    let appearance = "appearance"
+
+    [<Literal>]
+    let on = "on"
+
+    [<Literal>]
+    let hflip = "hflip"
+
+    let innerOperators =
+        [| initialize, 0; addSpeaker, 1; appearance, 0; on, 1; hflip, 0 |]
+
+module private BinaryOperator =
+    [<Literal>]
+    let add = "+"
+
+    [<Literal>]
+    let sub = "-"
+
+    let binaryOperators = [| add, Value.tryAdd; sub, Value.trySub |]
+
 type IEvalEnv =
     abstract member TryVariable: string -> Value option
-    abstract member TryArityInnerOperator: InnerOperator -> int option
-    abstract member TryBinaryOperator: string -> (Numeral -> Numeral -> Result<Numeral, string>) option
+    abstract member TryArityInnerOperator: string -> int option
+    abstract member TryBinaryOperator: string -> (Value -> Value -> Result<Value, string>) option
 
 type EvalEnv
     (
         variables: Map<string, Value>,
-        innerOperators: Map<InnerOperator, int>,
-        binaryOperators: Map<string, Numeral -> Numeral -> Result<Numeral, string>>
+        innerOperators: Map<string, int>,
+        binaryOperators: Map<string, Value -> Value -> Result<Value, string>>
     ) =
     static member prelude() : EvalEnv =
-        let innerOperators =
-            [ "initialize", 0; "add-speaker", 1; "appearance", 0; "on", 1; "hflip", 0 ]
-            |> Map.ofSeq
+        let innerOperators = InnerOperator.innerOperators |> Map.ofSeq
 
         let variables =
             innerOperators
@@ -163,7 +197,7 @@ type EvalEnv
                     name, Value.InnerOperator name)
             |> Map.ofSeq
 
-        let binaryOperators = [ "+", Numeral.tryAdd; "-", Numeral.trySub ] |> Map.ofSeq
+        let binaryOperators = BinaryOperator.binaryOperators |> Map.ofSeq
 
         EvalEnv(variables, innerOperators, binaryOperators)
 
@@ -174,20 +208,19 @@ type EvalEnv
     member this.WithVariable(var: string, value: Value) =
         EvalEnv(this.Variables.Add(var, value), this.InnerOperators, this.BinaryOperators)
 
-    member this.WithInnerOperator(inner: InnerOperator, arity: int) =
+    member this.WithInnerOperator(inner: string, arity: int) =
         EvalEnv(this.Variables, this.InnerOperators.Add(inner, arity), this.BinaryOperators)
 
-    member this.WithBinaryOperator(bin: string, f: Numeral -> Numeral -> Result<Numeral, string>) =
+    member this.WithBinaryOperator(bin: string, f: Value -> Value -> Result<Value, string>) =
         EvalEnv(this.Variables, this.InnerOperators, this.BinaryOperators.Add(bin, f))
 
-    member this.WithInnerOperatorSynonym(var: string, inner: InnerOperator) =
+    member this.WithInnerOperatorSynonym(var: string, inner: string) =
         let arity = this.InnerOperators.TryFind inner
 
         match arity with
         | None -> failwithf "An inner operator `%s` not found." inner
         | Some 0 -> this.WithVariable(var, Value.InnerOperatorApplied(inner, [||]))
         | Some _ -> this.WithVariable(var, Value.InnerOperator inner)
-
 
     interface IEvalEnv with
         member this.TryVariable v = this.Variables.TryFind v
@@ -201,15 +234,13 @@ module Value =
         | Value.String _
         | Value.Tuple _ -> Error "Cannot apply."
         | Value.BinaryOperator op -> Ok <| Value.BinaryOperatorLeftApplied(op, arg)
-        | Value.BinaryOperatorLeftApplied(op, arg0) ->
+        | Value.BinaryOperatorLeftApplied(op, lhs) ->
             monad {
                 let! f =
                     env.TryBinaryOperator op
                     |> Option.toResultWith (sprintf "Binary operator '%s' not found." op)
 
-                match arg0, arg with
-                | Value.Numeral n0, Value.Numeral n1 -> return! f n0 n1 |>> Value.Numeral
-                | _ -> return! Error "Invalid arguments."
+                return! f lhs arg
             }
         | Value.InnerOperatorApplied _ -> Error "Too many arguments."
         | Value.InnerOperator op ->
@@ -255,16 +286,14 @@ module Interpreter =
                 })
         | Expr.BinaryOperator(op, expr0, expr1) ->
             monad {
-                let! v0 = expr0 |> tryEval env
-                let! v1 = expr1 |> tryEval env
+                let! lhs = expr0 |> tryEval env
+                let! rhs = expr1 |> tryEval env
 
                 let! f =
                     env.TryBinaryOperator op.Name
                     |> Option.toResultWith (sprintf "Binary operator '%s' not found." op.Name)
 
-                match v0, v1 with
-                | Value.Numeral n0, Value.Numeral n1 -> return! f n0 n1 |>> Value.Numeral
-                | _ -> return! Error "Invalid arguments."
+                return! f lhs rhs
             }
         | Expr.Tuple exprs ->
             exprs |> List.map (tryEval env) |> ResultExt.sequence
@@ -288,7 +317,7 @@ module Interpreter =
                     let! env, font = acc
 
                     match statement with
-                    | Statement.Gets(targetExpr, contentExpr) ->
+                    | Gets(targetExpr, contentExpr) ->
                         let! target = targetExpr |> tryEval env
                         let! content = contentExpr |> tryEval env
 
@@ -371,7 +400,7 @@ module Interpreter =
                     let! env, pos = acc
 
                     match statement with
-                    | Statement.Gets(targetExpr, contentExpr) ->
+                    | Gets(targetExpr, contentExpr) ->
                         let! target = targetExpr |> tryEval env >>= Value.tryAsString
 
                         let pos' = pos |> Option.defaultValue { X = None; Y = None }
@@ -412,7 +441,7 @@ module Interpreter =
                     let! env, size = acc
 
                     match statement with
-                    | Statement.Gets(targetExpr, contentExpr) ->
+                    | Gets(targetExpr, contentExpr) ->
                         let! target = targetExpr |> tryEval env
                         let! content = contentExpr |> tryEval env
 
@@ -464,7 +493,7 @@ module Interpreter =
                 let! env, config = acc
 
                 match statement with
-                | Statement.Gets(targetExpr, contentExpr) ->
+                | Gets(targetExpr, contentExpr) ->
                     let! target = targetExpr |> tryEval env >>= Value.tryAsString
 
                     match target with
@@ -478,7 +507,7 @@ module Interpreter =
 
                         return env, config'
                     | _ -> return! Error "Invalid assignment."
-                | Statement.Do(expr, optBlock) ->
+                | Do(expr, optBlock) ->
                     let! fieldName = expr |> tryEval env >>= Value.tryAsString
 
                     match fieldName with
@@ -556,7 +585,7 @@ module Interpreter =
                     let app' = app |> Option.defaultValue { Appearance = None; Pos = None }
 
                     match statement with
-                    | Statement.Do(expr, optBlock) ->
+                    | Do(expr, optBlock) ->
                         let! fieldName = expr |> tryEval env >>= Value.tryAsString
 
                         match fieldName with
@@ -565,7 +594,7 @@ module Interpreter =
                             let app'' = { app' with Pos = pos' }
                             return env', Some app''
                         | _ -> return! Error "Unknown field name in appearance."
-                    | Statement.Gets(targetExpr, contentExpr) ->
+                    | Gets(targetExpr, contentExpr) ->
                         let! target = targetExpr |> tryEval env >>= Value.tryAsString
                         let! content = contentExpr |> tryEval env
 
@@ -606,7 +635,7 @@ module Interpreter =
                 let! env, config = acc
 
                 match statement with
-                | Statement.Gets(targetExpr, contentExpr) ->
+                | Gets(targetExpr, contentExpr) ->
                     let! target = targetExpr |> tryEval env >>= Value.tryAsString
 
                     match target with
@@ -623,7 +652,7 @@ module Interpreter =
 
                         return env, config'
                     | _ -> return! Error "Invalid assignment."
-                | Statement.Do(expr, optBlock) ->
+                | Do(expr, optBlock) ->
                     let! fieldName = expr |> tryEval env >>= Value.tryAsString
 
                     match fieldName with
@@ -690,7 +719,7 @@ module Interpreter =
         (env: IEvalEnv, state: Frame.MovieState)
         : Result<IEvalEnv * Frame.MovieState, string> =
         let operators =
-            [ "on",
+            [ InnerOperator.on,
               fun (args: Value array) (block: Statement list option) ->
                   monad {
                       let! layerPath = args |> ArrayExt.tryAsSingleton "Expected one argument." >>= Value.tryAsString
@@ -702,7 +731,7 @@ module Interpreter =
                       let f' = Frame.SpeakerState.turnOn segments
                       return env, f'
                   }
-              "hflip",
+              InnerOperator.hflip,
               fun (args: Value array) (block: Statement list option) ->
                   monad {
                       do! args |> ArrayExt.tryAsEmpty "Expected no arguments."
@@ -724,7 +753,7 @@ module Interpreter =
                 (Ok(env, id), block')
                 ||> Seq.fold (fun acc statement ->
                     match statement with
-                    | Statement.Do(expr, block) ->
+                    | Do(expr, block) ->
                         monad {
                             let! env, f = acc
 
@@ -745,24 +774,26 @@ module Interpreter =
 
     //
 
+    let private statementOperators =
+        [ InnerOperator.initialize, runInitialize
+          InnerOperator.addSpeaker, runAddSpeaker
+          InnerOperator.appearance, runAppearance ]
+        |> Map.ofSeq
+
     let rec runStatement
         (movie: Frame.MovieBuilder)
         (statement: Statement)
         (env: IEvalEnv, state: Frame.MovieState)
         : Result<IEvalEnv * Frame.MovieState, string> =
+
         match statement with
-        | Statement.Do(expr, block) ->
-            expr
-            |> tryEval env
-            >>= function
-                | Value.InnerOperatorApplied(s, args) ->
-                    match s with
-                    | "initialize" -> runInitialize movie args block (env, state)
-                    | "add-speaker" -> runAddSpeaker movie args block (env, state)
-                    | "appearance" -> runAppearance movie args block (env, state)
-                    | _ -> Error "Unknown inner operator."
-                | s -> Error "Invalid expression as a statement; must be an inner operator."
-        | Statement.At(expr, block) ->
+        | Do(expr, block) ->
+            monad {
+                let! s, args = expr |> tryEval env >>= Value.tryAsInnerOperatorApplied
+                let! op = statementOperators.TryFind s |> Option.toResultWith "Unknown inner operator."
+                return! op movie args block (env, state)
+            }
+        | At(expr, block) ->
             monad {
                 let! name = expr |> tryEval env >>= Value.tryAsString
 
@@ -776,11 +807,15 @@ module Interpreter =
                         (Ok(env, state'), block)
                         ||> Seq.fold (fun acc statement -> acc >>= runStatement movie statement)
             }
-        | Statement.Gets(_, _) -> Error "Assignment is not allowed at the top level."
-        | Statement.Talk talk -> Ok(env, movie.YieldFrame(state, talk.Subtitle, talk.Speech))
+        | Gets(_, _) -> Error "Assignment is not allowed at the top level."
+        | Talk talk -> Ok(env, movie.YieldFrame(state, talk.Subtitle, talk.Speech))
 
     //
 
     let run (movie: Frame.MovieBuilder) (ast: AST) (env: IEvalEnv, state: Frame.MovieState) =
         (Ok(env, state), ast.Statements)
         ||> Seq.fold (fun acc statement -> acc >>= runStatement movie statement)
+
+    let build (movie: Frame.MovieBuilder) (env: IEvalEnv) (ast: AST) =
+        let state = Frame.MovieState.empty
+        run movie ast (env, state) |> Result.map snd
