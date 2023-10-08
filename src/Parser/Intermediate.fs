@@ -1,10 +1,6 @@
 namespace Parser
 
-open Script
-
 open FSharpPlus
-
-type BinaryOperatorName = string
 
 [<RequireQualifiedAccess>]
 type private IntermediateExpr =
@@ -12,7 +8,7 @@ type private IntermediateExpr =
     | String of string
     | Variable of string
     | App of IntermediateExpr * IntermediateExpr list
-    | BinOpSeries of _init: (IntermediateExpr * BinaryOperatorName) list * _last: IntermediateExpr
+    | BinOpSeries of _init: (IntermediateExpr * Script.BinaryOperator) list * _last: IntermediateExpr
     | Tuple of IntermediateExpr list
 
 [<RequireQualifiedAccess>]
@@ -90,7 +86,7 @@ type private Intermediate =
 
         and parseBinOpSeries
             (line: Lexer.LineNode list)
-            : Result<(IntermediateExpr * BinaryOperatorName) list * IntermediateExpr * Lexer.LineNode list, string> =
+            : Result<(IntermediateExpr * Script.BinaryOperator) list * IntermediateExpr * Lexer.LineNode list, string> =
             let tryTermBinOp =
                 line |> parseTerm |>> (fun (term, rest) -> term, rest, parseBinOp rest)
 

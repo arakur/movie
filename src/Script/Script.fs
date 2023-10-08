@@ -164,7 +164,7 @@ module private InnerOperator =
     let innerOperators =
         [| initialize, 0; addSpeaker, 1; appearance, 0; on, 1; hflip, 0 |]
 
-module private BinaryOperator =
+module private BinaryOperators =
     [<Literal>]
     let add = "+"
 
@@ -197,7 +197,7 @@ type EvalEnv
                     name, Value.InnerOperator name)
             |> Map.ofSeq
 
-        let binaryOperators = BinaryOperator.binaryOperators |> Map.ofSeq
+        let binaryOperators = BinaryOperators.binaryOperators |> Map.ofSeq
 
         EvalEnv(variables, innerOperators, binaryOperators)
 
