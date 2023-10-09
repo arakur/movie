@@ -130,8 +130,8 @@ let private linesFrom (source: string) : Node seq =
         content |> between quote quote |>> LineNode.String
 
     let parseWord: Parser<LineNode, unit> =
-        let head = noneOf ([ ' '; ','; '\n' ] @ symbolChars)
-        let rest = many (noneOf [ ' '; ','; '\n' ])
+        let head = noneOf ([ ' '; ','; '('; ')' ] @ symbolChars)
+        let rest = many (noneOf [ ' '; ','; '('; ')' ])
         pipe2 head rest (fun h r -> h :: r |> String.ofList |> LineNode.Word)
 
     let gets: Parser<LineNode, unit> = pstring "<-" >>% LineNode.Gets

@@ -12,8 +12,12 @@ type Arg =
         | K k -> k
         | KV(k, v) -> $"-{k} {v}"
 
+type Input = { Path: Path; Arguments: Arg list }
+
+type Background = { Input: Input; IsImage: bool }
+
 type FFmpegArguments =
-    { Inputs: Path list
+    { Inputs: Input list
       FilterComplex: FilterComplex option
       Args: Arg list
       Output: Path }
@@ -25,9 +29,12 @@ type FFmpegArguments =
         seq {
             yield "-y"
 
-            for input in this.Inputs do
+            for { Path = path; Arguments = arguments } in this.Inputs do
+                for arg in arguments do
+                    yield arg.Compose()
+
                 yield "-i"
-                yield $"\"{input}\""
+                yield $"\"{path}\""
 
             match this.FilterComplex with
             | Some filterComplex -> yield filterComplex.Compose()

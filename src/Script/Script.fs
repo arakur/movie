@@ -499,13 +499,49 @@ module Interpreter =
                     match target with
                     | "background" ->
                         // TODO: 色指定にも対応する．
-                        let! background = contentExpr |> tryEval env >>= Value.tryAsString
+                        let! backgroundTypeValue, backgroundContentValue =
+                            contentExpr
+                            |> tryEval env
+                            >>= Value.tryAsTuple
+                            >>= ArrayExt.tryAsTuple2 "Expected a tuple with 2 elements."
 
-                        let config' =
-                            { config with
-                                Background = Some(Frame.Background.File background) }
+                        let! backgroundType = backgroundTypeValue |> Value.tryAsString
 
-                        return env, config'
+                        match backgroundType with
+                        | "video" ->
+                            let! path = backgroundContentValue |> Value.tryAsString
+                            let background = Frame.Background.Video path
+
+                            let config' =
+                                { config with
+                                    Background = Some background }
+
+                            return env, config'
+                        | "image" ->
+                            let! path = backgroundContentValue |> Value.tryAsString
+                            let background = Frame.Background.Image path
+
+                            let config' =
+                                { config with
+                                    Background = Some background }
+
+                            return env, config'
+                        | "rgb" ->
+                            let! r, g, b =
+                                backgroundContentValue
+                                |> Value.tryAsTuple
+                                >>= (Seq.map Value.tryAsInt >> ResultExt.sequence)
+                                |>> Array.ofSeq
+                                >>= ArrayExt.tryAsTuple3 "Expected a tuple with 3 elements."
+
+                            let background = Frame.Background.Color(Types.Color.RGB(r, g, b))
+
+                            let config' =
+                                { config with
+                                    Background = Some background }
+
+                            return env, config'
+                        | _ -> return! Error "Unknown background type."
                     | _ -> return! Error "Invalid assignment."
                 | Do(expr, optBlock) ->
                     let! fieldName = expr |> tryEval env >>= Value.tryAsString

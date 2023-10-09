@@ -88,13 +88,21 @@ type SubtitleState =
 
 [<RequireQualifiedAccess>]
 type Background =
-    // TODO: 静止画背景．
-    | File of string
+    | Image of fileName: string
+    | Video of fileName: string
     | Color of Color
 
-    member this.ToFFmpegInput =
+    // The second output is if the background has an audio stream.
+    member this.ToFFmpegBackgroundInput: FFmpeg.Background =
         match this with
-        | File path -> sprintf "\"%s\"" path
+        | Image path ->
+            { FFmpeg.Input =
+                { Path = path
+                  Arguments = [ FFmpeg.Arg.KV("loop", "1") ] }
+              FFmpeg.IsImage = true }
+        | Video path ->
+            { FFmpeg.Input = { Path = path; Arguments = [] }
+              FFmpeg.IsImage = false }
         | Color _color ->
             // TODO: Implement this.
             failwith "TODO: color background is not implemented yet."
@@ -194,4 +202,4 @@ module MovieBuilder =
     let compose (env: Env.Env) (state: MovieState) (output: Path) =
         let frameOutputs = FrameOutput.framesToOutput env (state.Frames |> Seq.toList)
 
-        FrameOutput.exportVideo env.FFmpeg state.Background.ToFFmpegInput frameOutputs output
+        FrameOutput.exportVideo env.FFmpeg state.Background.ToFFmpegBackgroundInput frameOutputs output

@@ -3,7 +3,7 @@ namespace FFmpeg
 open Types
 
 type FFmpegBuilderState =
-    { Inputs: Path list
+    { Inputs: Input list
       Filters: Filter list
       Mappings: Node list
       InnerNodeIndex: int }
@@ -97,12 +97,12 @@ module FFmpegBuilder =
               AVInput = Node.AVInput index },
             { s with Inputs = name :: s.Inputs })
 
-    let inputNodeN (names: string seq) =
+    let inputNodeN (inputs: Input seq) =
         FFmpegStateM(fun s ->
             let index = s.Inputs.Length
 
             let nodes, newInputs =
-                names
+                inputs
                 |> Seq.indexed
                 |> Seq.fold
                     (fun (nodes, inputs) (i, name) ->
@@ -234,3 +234,13 @@ module FFmpegBuilder =
 
                 do! overlay layers layerOutput output
             }
+
+    let trim (duration: float * float) (input: Node) (output: Node) =
+        yieldFilter (
+            Filter.Create
+                "trim"
+                [ FArg.KV("start", duration |> fst |> string)
+                  FArg.KV("end", duration |> snd |> string) ]
+                [ input ]
+                [ output ]
+        )

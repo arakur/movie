@@ -121,32 +121,55 @@ type FrameOutput =
                 |> Seq.toList
               Pos = frame.Subtitle.Pos })
 
-    static member exportVideo (ffmpeg: FFmpeg) (background: Path) (frameOutputs: FrameOutput list) (output: Path) =
+    static member exportVideo
+        (ffmpeg: FFmpeg)
+        (background: Background)
+        (frameOutputs: FrameOutput list)
+        (output: Path)
+        =
         let arguments =
             builder {
-                let! frameNodesV = innerNodeN frameOutputs.Length
+                // let! frameNodesV = innerNodeN frameOutputs.Length
 
                 let! { VInput = backgroundV
-                       AInput = backgroundA } = inputNode background
+                       AInput = backgroundA } = inputNode background.Input
 
                 let! voices =
-                    inputNodeN (frameOutputs |> List.map (fun frame -> frame.VoiceFile))
+                    inputNodeN (
+                        frameOutputs
+                        |> List.map (fun frame ->
+                            { Path = frame.VoiceFile
+                              Arguments = [] })
+                    )
                     |>> List.map InputNode.aInput
 
-                let mutable currentSec: float = 0
+                let frameDurations =
+                    frameOutputs
+                    |> Seq.map (fun frame -> frame.Length)
+                    |> Seq.scan (+) 0.0
+                    |> Seq.windowed 2
+                    |> Seq.map (fun window -> window[0], window[1])
 
-                let mutable prevV = backgroundV
+                let wholeLength = frameOutputs |> List.map (fun frame -> frame.Length) |> Seq.sum
 
-                for frame in frameOutputs do
+                let! prevV =
+                    builder {
+                        if background.IsImage then
+                            let! prevV = innerNode
+                            do! trim (0, wholeLength) backgroundV prevV
+                            return prevV
+                        else
+                            return backgroundV
+                    }
+
+                let mutable prevV = prevV
+
+                for frame, duration in Seq.zip frameOutputs frameDurations do
                     let! currentV = innerNode
 
                     let! apps =
-                        inputNodeN (frame.Arrangements |> List.map (fun arr -> arr.Path))
+                        inputNodeN (frame.Arrangements |> List.map (fun arr -> { Path = arr.Path; Arguments = [] }))
                         |>> List.map InputNode.vInput
-
-
-                    let duration = (currentSec, currentSec + frame.Length)
-                    currentSec <- currentSec + frame.Length
 
                     let layers =
                         frame.Arrangements
@@ -156,7 +179,10 @@ type FrameOutput =
                               Input = apps.[i]
                               Shortest = false })
 
-                    let! subtitle = inputNode frame.SubtitleFile
+                    let! subtitle =
+                        inputNode
+                            { Path = frame.SubtitleFile
+                              Arguments = [] }
 
                     let subtitleLayer =
                         { Pos = frame.Pos
@@ -172,13 +198,22 @@ type FrameOutput =
                 do! concatA voices voiceConcatA
 
                 let outputV = prevV
-                let! outputA = innerNode
 
-                do! mixAudio [ backgroundA; voiceConcatA ] outputA
+                let! outputA =
+                    builder {
+                        if background.IsImage then
+                            return voiceConcatA
+                        else
+                            let! outputA = innerNode
+                            do! mixAudio [ backgroundA; voiceConcatA ] outputA
+                            return outputA
+                    }
 
                 do! mapping outputV
                 do! mapping outputA
             }
             |> FilterComplexStateM.build [ Arg.KV("pix_fmt", "yuv420p") ] output
+
+        printfn "%s" <| arguments.Compose() // DEBUG
 
         ffmpeg.StartProcess arguments
