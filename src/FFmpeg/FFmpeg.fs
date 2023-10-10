@@ -14,7 +14,10 @@ type Arg =
 
 type Input = { Path: Path; Arguments: Arg list }
 
-type Background = { Input: Input; IsImage: bool }
+type Background =
+    | Image of fileName: string
+    | Video of fileName: string
+    | RGB of r: int * g: int * b: int
 
 type FFmpegArguments =
     { Inputs: Input list

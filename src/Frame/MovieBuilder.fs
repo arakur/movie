@@ -90,22 +90,13 @@ type SubtitleState =
 type Background =
     | Image of fileName: string
     | Video of fileName: string
-    | Color of Color
+    | RGB of r: int * g: int * b: int
 
-    // The second output is if the background has an audio stream.
     member this.ToFFmpegBackgroundInput: FFmpeg.Background =
         match this with
-        | Image path ->
-            { FFmpeg.Input =
-                { Path = path
-                  Arguments = [ FFmpeg.Arg.KV("loop", "1") ] }
-              FFmpeg.IsImage = true }
-        | Video path ->
-            { FFmpeg.Input = { Path = path; Arguments = [] }
-              FFmpeg.IsImage = false }
-        | Color _color ->
-            // TODO: Implement this.
-            failwith "TODO: color background is not implemented yet."
+        | Image path -> FFmpeg.Background.Image path
+        | Video path -> FFmpeg.Background.Video path
+        | RGB(r, g, b) -> FFmpeg.Background.RGB(r, g, b)
 
 type MovieState =
     { Frames: Frame Deque
@@ -126,7 +117,7 @@ type MovieState =
                   Family = "" }
               Pos = { X = 0<px>; Y = 0<px> }
               Size = { Width = 0<px>; Height = 0<px> } }
-          Background = Background.Color(RGB(0, 0, 0)) }
+          Background = Background.RGB(0, 0, 0) }
 
 type Initialize =
     { Font: SubtitleFont

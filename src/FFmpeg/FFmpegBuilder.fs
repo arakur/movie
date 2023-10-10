@@ -244,3 +244,6 @@ module FFmpegBuilder =
                 [ input ]
                 [ output ]
         )
+
+    let colorSource (r: int) (g: int) (b: int) (output: Node) =
+        yieldFilter (Filter.Create "color" [ FArg.KV("c", $"#{r:X2}{g:X2}{b:X2}") ] [] [ output ])

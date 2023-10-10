@@ -534,7 +534,7 @@ module Interpreter =
                                 |>> Array.ofSeq
                                 >>= ArrayExt.tryAsTuple3 "Expected a tuple with 3 elements."
 
-                            let background = Frame.Background.Color(Types.Color.RGB(r, g, b))
+                            let background = Frame.Background.RGB(r, g, b)
 
                             let config' =
                                 { config with

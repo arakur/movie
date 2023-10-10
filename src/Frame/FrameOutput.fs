@@ -129,11 +129,6 @@ type FrameOutput =
         =
         let arguments =
             builder {
-                // let! frameNodesV = innerNodeN frameOutputs.Length
-
-                let! { VInput = backgroundV
-                       AInput = backgroundA } = inputNode background.Input
-
                 let! voices =
                     inputNodeN (
                         frameOutputs
@@ -152,17 +147,29 @@ type FrameOutput =
 
                 let wholeLength = frameOutputs |> List.map (fun frame -> frame.Length) |> Seq.sum
 
-                let! prevV =
+                let! backgroundNodeV, backgroundNodeA =
                     builder {
-                        if background.IsImage then
-                            let! prevV = innerNode
-                            do! trim (0, wholeLength) backgroundV prevV
-                            return prevV
-                        else
-                            return backgroundV
+                        match background with
+                        | Image path ->
+                            let! input =
+                                inputNode
+                                    { Path = path
+                                      Arguments = [ Arg.KV("loop", "1"); Arg.KV("t", wholeLength.ToString()) ] }
+
+                            return input.VInput, None
+                        | Video path ->
+                            let! input = inputNode { Path = path; Arguments = [] }
+                            return input.VInput, Some input.AInput
+                        | RGB(r, g, b) ->
+                            // FIXME: Cannot set a color source as background, it has overlaid on other sources.
+                            let! colorInf = innerNode
+                            let! color = innerNode
+                            do! colorSource r g b colorInf
+                            do! trim (0, wholeLength) colorInf color
+                            return color, None
                     }
 
-                let mutable prevV = prevV
+                let mutable prevV = backgroundNodeV
 
                 for frame, duration in Seq.zip frameOutputs frameDurations do
                     let! currentV = innerNode
@@ -201,12 +208,12 @@ type FrameOutput =
 
                 let! outputA =
                     builder {
-                        if background.IsImage then
-                            return voiceConcatA
-                        else
+                        match backgroundNodeA with
+                        | Some backgroundA ->
                             let! outputA = innerNode
                             do! mixAudio [ backgroundA; voiceConcatA ] outputA
                             return outputA
+                        | None -> return voiceConcatA
                     }
 
                 do! mapping outputV

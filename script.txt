@@ -13,7 +13,8 @@
   pos: x <- 400px; y <- 700px
   size: width <- 1000px; height <- 300px
   // background <- (video, sample/sample-10s.mp4)
-  background <- (image, sample/okumono-akicheck1.png)
+  // background <- (image, sample/okumono-akicheck1.png)
+  background <- (rgb, (255, 255, 255))
 
 // 話者の追加
 #add-speaker 春日部つむぎ:
