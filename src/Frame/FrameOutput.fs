@@ -8,7 +8,10 @@ open FFmpeg.FFmpegBuilder
 
 open NAudio
 
-type AppearanceArrangement = { Path: Path; Pos: Pos }
+type AppearanceArrangement =
+    { Path: Path
+      Pos: Pos
+      Resize: Resize option }
 
 type FrameOutput =
     { VoiceFile: Path
@@ -117,7 +120,8 @@ type FrameOutput =
                 frame.FrameAppearances
                 |> Seq.map (fun appearance ->
                     { Path = appearanceMap.[appearance.Appearance]
-                      Pos = appearance.Pos })
+                      Pos = appearance.Pos
+                      Resize = appearance.Resize })
                 |> Seq.toList
               Pos = frame.Subtitle.Pos })
 
@@ -159,6 +163,7 @@ type FrameOutput =
                             return input.VInput, None
                         | Video path ->
                             let! input = inputNode { Path = path; Arguments = [] }
+
                             return input.VInput, Some input.AInput
                         | RGB(r, g, b) ->
                             // FIXME: Cannot set a color source as background, it has overlaid on other sources.
@@ -175,13 +180,16 @@ type FrameOutput =
                     let! currentV = innerNode
 
                     let! apps =
-                        inputNodeN (frame.Arrangements |> List.map (fun arr -> { Path = arr.Path; Arguments = [] }))
+                        inputNodeN (frame.Arrangements |> List.map (fun app -> { Path = app.Path; Arguments = [] }))
                         |>> List.map InputNode.vInput
 
+                    let resizes = frame.Arrangements |> List.map (fun app -> app.Resize)
+
                     let layers =
-                        frame.Arrangements
-                        |> List.mapi (fun i arr ->
+                        (frame.Arrangements, resizes)
+                        ||> List.mapi2 (fun i arr resize ->
                             { Pos = arr.Pos
+                              Resize = resize
                               Duration = Some duration
                               Input = apps.[i]
                               Shortest = false })
@@ -193,6 +201,7 @@ type FrameOutput =
 
                     let subtitleLayer =
                         { Pos = frame.Pos
+                          Resize = None
                           Duration = Some duration
                           Input = subtitle.VInput
                           Shortest = false }

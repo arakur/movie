@@ -10,7 +10,7 @@
     size <- 50pt
     weight <- bold
     family <- "Noto Sans CJK JP"
-  pos: x <- 400px; y <- 700px
+  pos: x <- 460px; y <- 700px
   size: width <- 1000px; height <- 300px
   // background <- (video, sample/sample-10s.mp4)
   background <- (image, sample/okumono-akicheck1.png)
@@ -21,17 +21,19 @@
   style <- ノーマル
   font: color <- (251, 202, 77)
   appearance:
-    appearance <- appearance/春日部つむぎ
-    pos: x <- 0px; y <- 0px
+    path <- appearance/春日部つむぎ
+    pos: x <- 0px; y <- 400px
+    resize: scale <- 0.5
 
 #add-speaker 四国めたん:
   name <- 四国めたん
   style <- ノーマル
   font: color <- (231, 96, 158)
   appearance:
-    appearance <- appearance/四国めたん
-    pos:  x <- 800px
-          y <- 0px
+    path <- appearance/四国めたん
+    pos:  x <- 1400px
+          y <- 400px
+    resize: scale <- 0.5
 
 // 立ち絵の設定
 @ 春日部つむぎ: #立ち絵: #hflip

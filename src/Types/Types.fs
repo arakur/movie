@@ -24,3 +24,11 @@ type PosFloat =
           Y = int this.Y * 1<px> }
 
 type Size = { Width: int<px>; Height: int<px> }
+
+[<RequireQualifiedAccess>]
+type Resize =
+    | Scale of float
+    | ScaleXY of float * float
+    | Size of width: int<px> * height: int<px>
+    | SizeX of int<px>
+    | SizeY of int<px>

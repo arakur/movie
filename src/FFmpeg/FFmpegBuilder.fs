@@ -192,14 +192,56 @@ module FFmpegBuilder =
     let nullFilter (input: Node) (output: Node) =
         yieldFilter (Filter.Create "null" [] [ input ] [ output ])
 
+    let resize (rs: Resize) (input: Node) (output: Node) =
+        match rs with
+        | Resize.Scale scale ->
+            yieldFilter (
+                Filter.Create "scale" [ FArg.KV("w", $"iw*{scale}"); FArg.KV("h", $"ih*{scale}") ] [ input ] [ output ]
+            )
+        | Resize.ScaleXY(scaleX, scaleY) ->
+            yieldFilter (
+                Filter.Create
+                    "scale"
+                    [ FArg.KV("w", $"iw*{scaleX}"); FArg.KV("h", $"ih*{scaleY}") ]
+                    [ input ]
+                    [ output ]
+            )
+        | Resize.Size(width, height) ->
+            yieldFilter (
+                Filter.Create
+                    "scale"
+                    [ FArg.KV("w", width.ToString()); FArg.KV("h", height.ToString()) ]
+                    [ input ]
+                    [ output ]
+            )
+        | Resize.SizeX width ->
+            yieldFilter (
+                Filter.Create "scale" [ FArg.KV("w", width.ToString()); FArg.KV("h", "ih") ] [ input ] [ output ]
+            )
+        | Resize.SizeY height ->
+            yieldFilter (
+                Filter.Create "scale" [ FArg.KV("w", "iw"); FArg.KV("h", height.ToString()) ] [ input ] [ output ]
+            )
+
     type Layer =
         { Pos: Pos
+          Resize: Resize option
           Duration: (float * float) option
           Input: Node
           Shortest: bool }
 
     let overlay2 (layer: Layer) (background: Node) (output: Node) =
         builder {
+            let! layerResized =
+                builder {
+                    match layer.Resize with
+                    | None -> return layer.Input
+                    | Some rs ->
+                        let! inner = innerNode
+                        do! resize rs layer.Input inner
+                        return inner
+                }
+
             do!
                 yieldFilter (
                     Filter.Create
@@ -217,7 +259,7 @@ module FFmpegBuilder =
                                 |> Option.toList
                          }
                          |> List.ofSeq)
-                        [ background; layer.Input ]
+                        [ background; layerResized ]
                         [ output ]
                 )
         }

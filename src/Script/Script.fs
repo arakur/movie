@@ -71,6 +71,12 @@ type Numeral =
         | Int(i, None) -> Ok i
         | _ -> Error "Invalid type; expected int."
 
+    static member tryAsFloat this =
+        match this with
+        | Int(i, None) -> Ok(float i)
+        | Float(f, None) -> Ok f
+        | _ -> Error "Invalid type; expected float."
+
     static member tryAsFloatMeas measure this =
         match this with
         | Int(i, Some m) when m = measure -> Ok(float i)
@@ -111,6 +117,9 @@ type Value =
 
     static member tryAsInt this =
         this |> Value.tryAsNumeral >>= Numeral.tryAsInt
+
+    static member tryAsFloat this =
+        this |> Value.tryAsNumeral >>= Numeral.tryAsFloat
 
     static member tryAsFloatMeas measure this =
         this |> Value.tryAsNumeral >>= Numeral.tryAsFloatMeas measure
@@ -380,7 +389,7 @@ module Interpreter =
                             let! family = content |> Value.tryAsString
                             let font'' = { font' with Family = Some family }
                             return env, Some font''
-                        | _ -> return! Error "Unknown field name in font."
+                        | _ -> return! Error $"Unknown field name `{fieldName}` in font."
                     | _ -> return! Error "Invalid statement."
                 })
             (Ok(env, fontState))
@@ -401,11 +410,11 @@ module Interpreter =
 
                     match statement with
                     | Gets(targetExpr, contentExpr) ->
-                        let! target = targetExpr |> tryEval env >>= Value.tryAsString
+                        let! fieldName = targetExpr |> tryEval env >>= Value.tryAsString
 
                         let pos' = pos |> Option.defaultValue { X = None; Y = None }
 
-                        match target with
+                        match fieldName with
                         | "x" ->
                             let! x = contentExpr |> tryEval env >>= Value.tryAsFloatMeas "px"
 
@@ -422,16 +431,16 @@ module Interpreter =
                                     Y = Some(int y * 1<Measure.px>) }
 
                             return env, Some pos''
-                        | _ -> return! Error "Unknown field name in pos."
+                        | _ -> return! Error $"Unknown field name `{fieldName}` in pos."
                     | _ -> return! Error "Invalid statement."
                 })
             (Ok(env, posState))
 
-    type private InitializeSizeState =
+    type private SizeState =
         { Width: int<Measure.px> option
           Height: int<Measure.px> option }
 
-    let private runSize (block: Statement list option) (env: IEvalEnv, sizeState: InitializeSizeState option) =
+    let private runSize (block: Statement list option) (env: IEvalEnv, sizeState: SizeState option) =
         block
         |> Option.toResultWith "Expected block."
         >>= (fun block' ->
@@ -466,14 +475,85 @@ module Interpreter =
                                     Height = Some(int height * 1<Measure.px>) }
 
                             return env, Some size''
-                        | _ -> return! Error "Unknown field name in size."
+                        | _ -> return! Error $"Unknown field name `{fieldName}` in size."
+                    | _ -> return! Error "Invalid statement."
+                }))
+
+    type private ResizeState =
+        { Width: int<Measure.px> option
+          Height: int<Measure.px> option
+          Scale: float option
+          ScaleX: float option
+          ScaleY: float option }
+
+    let private runResize (block: Statement list option) (env: IEvalEnv, resizeState: ResizeState option) =
+        block
+        |> Option.toResultWith "Expected block."
+        >>= (fun block' ->
+            (Ok(env, resizeState), block')
+            ||> Seq.fold (fun acc statement ->
+                monad {
+                    let! env, resize = acc
+
+                    match statement with
+                    | Gets(targetExpr, contentExpr) ->
+                        let! target = targetExpr |> tryEval env
+                        let! content = contentExpr |> tryEval env
+
+                        let resize' =
+                            resize
+                            |> Option.defaultValue
+                                { Width = None
+                                  Height = None
+                                  Scale = None
+                                  ScaleX = None
+                                  ScaleY = None }
+
+                        let! fieldName = target |> Value.tryAsString
+
+                        match fieldName with
+                        | "width" ->
+                            let! width = content |> Value.tryAsFloatMeas "px"
+
+                            let resize'' =
+                                { resize' with
+                                    Width = Some(int width * 1<Measure.px>) }
+
+                            return env, Some resize''
+                        | "height" ->
+                            let! height = content |> Value.tryAsFloatMeas "px"
+
+                            let resize'' =
+                                { resize' with
+                                    Height = Some(int height * 1<Measure.px>) }
+
+                            return env, Some resize''
+                        | "scale" ->
+                            let! scale = content |> Value.tryAsFloat
+
+                            let resize'' = { resize' with Scale = Some scale }
+
+                            return env, Some resize''
+                        | "scale-x" ->
+                            let! scaleX = content |> Value.tryAsFloat
+
+                            let resize'' = { resize' with ScaleX = Some scaleX }
+
+                            return env, Some resize''
+                        | "scale-y" ->
+                            let! scaleY = content |> Value.tryAsFloat
+
+                            let resize'' = { resize' with ScaleY = Some(scaleY) }
+
+                            return env, Some resize''
+                        | _ -> return! Error $"Unknown field name `{fieldName}` in resize."
                     | _ -> return! Error "Invalid statement."
                 }))
 
     type private InitializeState =
         { Font: FontState option
           Pos: PosState option
-          Size: InitializeSizeState option
+          Size: SizeState option
           Background: Frame.Background option }
 
     let runInitialize
@@ -556,7 +636,7 @@ module Interpreter =
                     | "size" ->
                         let! env', size' = runSize optBlock (env, config.Size)
                         return env', { config with Size = size' }
-                    | _ -> return! Error "Unknown field name in initialize."
+                    | _ -> return! Error $"Unknown field name `{fieldName}` in initialize."
                 | _ -> return! Error "Invalid statement."
             }
 
@@ -604,8 +684,9 @@ module Interpreter =
     //
 
     type private AddSpeakerAppearanceState =
-        { Appearance: string option
-          Pos: PosState option }
+        { Path: string option
+          Pos: PosState option
+          Resize: ResizeState option }
 
     let private runAddSpeakerAppearance
         (block: Statement list option)
@@ -618,7 +699,12 @@ module Interpreter =
                 monad {
                     let! env, app = acc
 
-                    let app' = app |> Option.defaultValue { Appearance = None; Pos = None }
+                    let app' =
+                        app
+                        |> Option.defaultValue
+                            { Path = None
+                              Pos = None
+                              Resize = None }
 
                     match statement with
                     | Do(expr, optBlock) ->
@@ -629,21 +715,23 @@ module Interpreter =
                             let! env', pos' = runPos optBlock (env, app'.Pos)
                             let app'' = { app' with Pos = pos' }
                             return env', Some app''
-                        | _ -> return! Error "Unknown field name in appearance."
+                        | "resize" ->
+                            let! env', resize' = runResize optBlock (env, app'.Resize)
+                            let app'' = { app' with Resize = resize' }
+                            return env', Some app''
+                        | _ -> return! Error $"Unknown field name `{fieldName}` in appearance."
                     | Gets(targetExpr, contentExpr) ->
-                        let! target = targetExpr |> tryEval env >>= Value.tryAsString
+                        let! fieldName = targetExpr |> tryEval env >>= Value.tryAsString
                         let! content = contentExpr |> tryEval env
 
-                        match target with
-                        | "appearance" ->
-                            let! appearance = content |> Value.tryAsString
+                        match fieldName with
+                        | "path" ->
+                            let! path = content |> Value.tryAsString
 
-                            let app'' =
-                                { app' with
-                                    Appearance = Some appearance }
+                            let app'' = { app' with Path = Some path }
 
                             return env, Some app''
-                        | _ -> return! Error "Unknown field name in appearance."
+                        | _ -> return! Error $"Unknown field name `{fieldName}` in appearance."
                     | _ -> return! Error "Invalid statement."
                 })
             (Ok(env, app))
@@ -698,7 +786,7 @@ module Interpreter =
                     | "appearance" ->
                         let! env', app' = runAddSpeakerAppearance optBlock (env, config.Appearance)
                         return env', { config with Appearance = app' }
-                    | _ -> return! Error "Unknown field name in add-speaker."
+                    | _ -> return! Error $"Unknown field name `{fieldName}` in add-speaker."
                 | _ -> return! Error "Invalid statement."
             }
 
@@ -714,12 +802,47 @@ module Interpreter =
                 let fontWeight = font.Weight
                 let fontFamily = font.Family
 
+                let! appearancePath = appearance.Path |> Option.toResultWith "Path is not set."
+
                 let! appearancePos = appearance.Pos |> Option.toResultWith "Pos is not set."
 
                 let! posX = appearancePos.X |> Option.toResultWith "Pos X is not set."
                 let! posY = appearancePos.Y |> Option.toResultWith "Pos Y is not set."
 
-                let! appearance = appearance.Appearance |> Option.toResultWith "Appearance is not set."
+                let appearanceResize = appearance.Resize
+
+                let! resize' =
+                    appearanceResize
+                    |> function
+                        | None -> Ok None
+                        | Some resize ->
+                            match resize with
+                            | { Scale = Some scale
+                                ScaleX = None
+                                ScaleY = None
+                                Width = None
+                                Height = None } -> Ok(Some(Types.Resize.Scale scale))
+                            | { Scale = None
+                                ScaleX = Some scaleX
+                                ScaleY = Some scaleY
+                                Width = None
+                                Height = None } -> Ok(Some(Types.Resize.ScaleXY(scaleX, scaleY)))
+                            | { Scale = None
+                                ScaleX = None
+                                ScaleY = None
+                                Width = Some width
+                                Height = Some height } -> Ok(Some(Types.Resize.Size(width, height)))
+                            | { Scale = None
+                                ScaleX = None
+                                ScaleY = None
+                                Width = Some width
+                                Height = None } -> Ok(Some(Types.Resize.SizeX width))
+                            | { Scale = None
+                                ScaleX = None
+                                ScaleY = None
+                                Width = None
+                                Height = Some height } -> Ok(Some(Types.Resize.SizeY height))
+                            | _ -> Error "Fields of resize are not given correctly." // TODO
 
                 let config' =
                     { Frame.SpeakerState.Name = name
@@ -732,8 +855,9 @@ module Interpreter =
                             ?family = fontFamily
                         )
                       Frame.SpeakerState.Appearance =
-                        { Appearance = Appearance.Appearance.LoadDirectory appearance
-                          Pos = { X = posX; Y = posY } } }
+                        { Appearance = Appearance.Appearance.LoadDirectory appearancePath
+                          Pos = { X = posX; Y = posY }
+                          Resize = resize' } }
 
                 let state' = movie.AddSpeaker(state, speakerName, config')
                 return env, state'

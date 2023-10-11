@@ -17,7 +17,8 @@ type Subtitle =
 
 type FrameAppearance =
     { Appearance: Appearance.Appearance
-      Pos: Pos }
+      Pos: Pos
+      Resize: Resize option }
 
 type Frame =
     { Speech: Voicevox.Speech

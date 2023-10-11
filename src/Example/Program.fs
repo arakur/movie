@@ -7,33 +7,45 @@ open FSharpPlus
 
 let script = "script.txt"
 
-let output = "output/output.mp4"
-
-//
-
-let evalEnv = EvalEnv.prelude().WithInnerOperatorSynonym("立ち絵", "appearance")
-
-//
-
-let movieState =
-    script
-    |> System.IO.File.ReadAllText
-    |> AST.parse
-    |> Result.defaultWith failwith
-    |> Interpreter.build movie evalEnv
-    |> Result.defaultWith failwith
-
 do
     printfn "Ready for rendering..."
 
     use env = new Env("tmp")
 
-    printfn "Rendering..."
+    let mutable loop = true
 
-    let p = compose env movieState output
+    printfn "`render` to render, `exit` to exit."
 
-    let log = p.StandardError.ReadToEnd()
+    while loop do
+        printf "command: "
+        let input = System.Console.ReadLine()
 
-    printfn "%s" log
+        match input with
+        | "exit" -> loop <- false
+        | "render" ->
+            printfn "Rendering..."
 
-    printfn "Done."
+            let output = "output/output.mp4"
+
+            let evalEnv = EvalEnv.prelude().WithInnerOperatorSynonym("立ち絵", "appearance")
+
+            let movieState =
+                script
+                |> System.IO.File.ReadAllText
+                |> AST.parse
+                |> Result.defaultWith failwith
+                |> Interpreter.build movie evalEnv
+
+            match movieState with
+            | Error msg -> printfn "Error: %s" msg
+            | Ok movieState ->
+
+                let p = compose env movieState output
+
+                let log = p.StandardError.ReadToEnd()
+
+                printfn "%s" log
+
+                printfn "Done."
+
+        | _ -> printfn "Unknown command."
