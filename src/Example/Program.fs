@@ -39,12 +39,11 @@ do
             match movieState with
             | Error msg -> printfn "Error: %s" msg
             | Ok movieState ->
-
                 let p = compose env movieState output
 
                 let log = p.StandardError.ReadToEnd()
 
-                printfn "%s" log
+                // printfn "%s" log
 
                 printfn "Done."
 

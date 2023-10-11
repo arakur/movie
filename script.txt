@@ -16,7 +16,7 @@
   background <- (image, sample/okumono-akicheck1.png)
 
 // 話者の追加
-#add-speaker 春日部つむぎ:
+#add-speaker つむぎ:
   name <- 春日部つむぎ
   style <- ノーマル
   font: color <- (251, 202, 77)
@@ -25,29 +25,43 @@
     pos: x <- 0px; y <- 400px
     resize: scale <- 0.5
 
-#add-speaker 四国めたん:
+#add-speaker めたん:
   name <- 四国めたん
   style <- ノーマル
   font: color <- (231, 96, 158)
   appearance:
     path <- appearance/四国めたん
-    pos:  x <- 1400px
+    pos:  x <- 1350px
           y <- 400px
     resize: scale <- 0.5
 
 // 立ち絵の設定
-@ 春日部つむぎ: #立ち絵: #hflip
-@ 四国めたん: #立ち絵: #on 白ロリ服/左腕/普通
+@ つむぎ: #立ち絵: #hflip
+@ めたん: #立ち絵: #on 白ロリ服/左腕/普通
 
 // ここから本編
 
-@ 春日部つむぎ:
-  > モナドは単なる自己{関手|かんしゅ}の
-    圏におけるモノイド対象だよ．
+@ つむぎ:
+  > モナドは単なる自己{関手|かんしゅ}の圏におけるモノイド対象だよ．
   #立ち絵:
     #on ほっぺ/かげり
     #on 目/基本目セット/黒目/目逸らし
   > 何か問題でも？
-@ 四国めたん:
+@ めたん:
   #立ち絵: #on 白ロリ服/左腕/口元に指
   > おっそうだな．
+
+#add-speaker ずんだもん:
+  name <- ずんだもん
+  style <- ノーマル
+  font: color <- (144, 238, 144)
+  appearance:
+    path <- appearance/ずんだもん
+    pos:  x <- 1100px
+          y <- 400px
+    resize: scale <- 0.5
+
+@ ずんだもん:
+  > それはそうと {Gröbner|ぐれぶなー} 基底にはポン酢が合うのだ．
+
+

@@ -20,15 +20,15 @@ type Weight =
         match s with
         | "thin" -> Some Thin
         | "extra-light" -> Some ExtraLight
-        | "light" ->Some  Light
+        | "light" -> Some Light
         | "regular" -> Some Regular
-        | "medium" ->Some  Medium
-        | "semi-bold" ->Some  SemiBold
+        | "medium" -> Some Medium
+        | "semi-bold" -> Some SemiBold
         | "bold" -> Some Bold
-        | "extra-bold" ->Some  ExtraBold
-        | "black" ->Some  Black
+        | "extra-bold" -> Some ExtraBold
+        | "black" -> Some Black
         | _ -> None
-     
+
     member this.Compose() =
         match this with
         | Thin -> "\"thin\""
@@ -58,6 +58,7 @@ type TypstSource =
       Content: string }
 
     member this.Compose() =
+        // TODO: Enable to set font.
         let page =
             sprintf
                 "#set page(width: %fpt, height: %fpt, margin: %fpt)"
@@ -72,8 +73,7 @@ type TypstSource =
                 (this.Text.Weight.Compose())
                 (this.Text.Fill.Compose())
 
-        let content =
-            this.Content.Replace("\n", "\\\n")
+        let content = this.Content.Replace("\n", "\\\n")
 
         sprintf "%s\n%s\n%s" page text content
 

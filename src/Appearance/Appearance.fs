@@ -116,6 +116,3 @@ type Appearance =
             }
 
         magick.Start(arguments)
-
-    static member write (magick: ImageMagick) (outputTo: Path) (appearance: Appearance) =
-        appearance.Write(magick, outputTo)

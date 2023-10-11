@@ -51,11 +51,14 @@ type FrameOutput =
                         env.ImageMagick
                             .Start(
                                 sprintf
-                                    "convert %s -bordercolor none -border %d -background %s -alpha background -channel A -blur 0x1 -level 0,%f%% %s"
+                                    "convert %s -bordercolor none -border %d -background %s -alpha background -channel A -blur 0x1
+                                     -level 0,%f%% -resize %dx%d %s"
                                     typstOut
                                     10 // TODO: Magic number.
                                     "black" // TODO: Make configurable.
                                     0.1 // TODO: Magic number.
+                                    (int speech.Subtitle.Size.Width)
+                                    (int speech.Subtitle.Size.Height)
                                     subtitleFile
                             )
                             .WaitForExitAsync()
@@ -230,6 +233,6 @@ type FrameOutput =
             }
             |> FilterComplexStateM.build [ Arg.KV("pix_fmt", "yuv420p") ] output
 
-        printfn "%s" <| arguments.Compose() // DEBUG
+        // printfn "%s" <| arguments.Compose() // DEBUG
 
         ffmpeg.StartProcess arguments
