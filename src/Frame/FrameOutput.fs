@@ -42,6 +42,7 @@ type FrameOutput =
                         { Size = speech.Subtitle.Font.Size
                           Weight = speech.Subtitle.Font.Weight
                           Fill = speech.Subtitle.Font.Color }
+                      FontFamily = [ speech.Subtitle.Font.Family ]
                       Content = speech.Subtitle.Text }
 
                 task {

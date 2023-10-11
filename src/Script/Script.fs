@@ -968,7 +968,9 @@ module Interpreter =
                         ||> Seq.fold (fun acc statement -> acc >>= runStatement movie statement)
             }
         | Gets(_, _) -> Error "Assignment is not allowed at the top level."
-        | Talk talk -> Ok(env, movie.YieldFrame(state, talk.Subtitle, talk.Speech))
+        | Talk talk ->
+            let speech' = talk.Speech |> String.replace "\n" "" |> String.replace " " ""
+            Ok(env, movie.YieldFrame(state, talk.Subtitle, speech'))
 
     //
 

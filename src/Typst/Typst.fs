@@ -54,6 +54,7 @@ type Text =
 
 type TypstSource =
     { Page: Page
+      FontFamily: string list
       Text: Text
       Content: string }
 
@@ -68,10 +69,11 @@ type TypstSource =
 
         let text =
             sprintf
-                "#set text(size: %fpt, weight: %s, fill: %s)"
+                "#set text(size: %fpt, weight: %s, fill: %s, font: %s)"
                 this.Text.Size
                 (this.Text.Weight.Compose())
                 (this.Text.Fill.Compose())
+                (this.FontFamily |> Seq.map (sprintf "\"%s\"") |> String.concat " ")
 
         let content = this.Content.Replace("\n", "\\\n")
 
@@ -91,5 +93,5 @@ type Typst(path: string) =
                     .Start(path, sprintf "compile %s %s" srcPath outPath)
                     .WaitForExitAsync()
 
-            do System.IO.File.Delete(srcPath)
+        // do System.IO.File.Delete(srcPath) // DEBUG
         }
