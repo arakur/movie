@@ -33,8 +33,7 @@ do
                 script
                 |> System.IO.File.ReadAllText
                 |> AST.parse
-                |> Result.defaultWith failwith
-                |> Interpreter.build movie evalEnv
+                >>= Interpreter.build movie evalEnv
 
             match movieState with
             | Error msg -> printfn "Error: %s" msg
