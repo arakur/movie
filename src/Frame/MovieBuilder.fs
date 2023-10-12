@@ -148,6 +148,18 @@ type MovieBuilder() =
     [<CustomOperation "speaker">]
     member __.SetSpeaker(s: MovieState, name: Name) = { s with CurrentSpeaker = Some name }
 
+    [<CustomOperation "setStyle">]
+    member __.SetStyle(s: MovieState, style: string) =
+        let currentSpeaker =
+            s.CurrentSpeaker
+            |> Option.defaultWith (fun () -> failwith "Speaker is not set.")
+
+        let speaker = s.Speakers.[currentSpeaker]
+        let speaker' = { speaker with Style = style }
+
+        { s with
+            Speakers = s.Speakers.Add(currentSpeaker, speaker') }
+
     [<CustomOperation "modify">]
     member __.ModifySpeaker(s: MovieState, name: Name, f: SpeakerState -> SpeakerState) =
         { s with

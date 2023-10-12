@@ -164,6 +164,10 @@ module private InnerOperator =
     [<Literal>]
     let appearance = "appearance"
 
+
+    [<Literal>]
+    let setStyle = "set-style"
+
     [<Literal>]
     let on = "on"
 
@@ -171,7 +175,7 @@ module private InnerOperator =
     let hflip = "hflip"
 
     let innerOperators =
-        [| initialize, 0; addSpeaker, 1; appearance, 0; on, 1; hflip, 0 |]
+        [| initialize, 0; addSpeaker, 1; appearance, 0; setStyle, 1; on, 1; hflip, 0 |]
 
 module private BinaryOperators =
     [<Literal>]
@@ -932,12 +936,30 @@ module Interpreter =
                     env, state')
         }
 
+    let runSetStyle
+        (movie: Frame.MovieBuilder)
+        (args: Value array)
+        (block: Statement list option)
+        (env: IEvalEnv, state: Frame.MovieState)
+        : Result<IEvalEnv * Frame.MovieState, string> =
+        monad {
+            let! style = args |> ArrayExt.tryAsSingleton "Expected no arguments." >>= Value.tryAsString
+
+            if block.IsSome then
+                do! Error "Expected no block."
+
+            let state' = movie.SetStyle(state, style)
+
+            return env, state'
+        }
+
     //
 
     let private statementOperators =
         [ InnerOperator.initialize, runInitialize
           InnerOperator.addSpeaker, runAddSpeaker
-          InnerOperator.appearance, runAppearance ]
+          InnerOperator.appearance, runAppearance
+          InnerOperator.setStyle, runSetStyle ]
         |> Map.ofSeq
 
     let rec runStatement

@@ -10,7 +10,11 @@ let render path env =
 
     let output = "output/output.mp4"
 
-    let evalEnv = EvalEnv.prelude().WithInnerOperatorSynonym("立ち絵", "appearance")
+    let evalEnv =
+        EvalEnv
+            .prelude()
+            .WithInnerOperatorSynonym("立ち絵", "appearance")
+            .WithInnerOperatorSynonym("スタイル", "set-style")
 
     let script = path |> System.IO.File.ReadAllText
 

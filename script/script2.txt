@@ -1,15 +1,10 @@
 // 動画全体の設定
 #initialize:
   font:
-    color <-
-      (
-        255,
-        255,
-        255
-      )
+    color <- (255, 255, 255)
     size <- 50pt
     weight <- bold
-    family <- "Yu Gothic"
+    family <- "Yu Mincho"
   pos: x <- 460px; y <- 700px
   size: width <- 1000px; height <- 300px
   // background <- (video, sample/sample-10s.mp4)
