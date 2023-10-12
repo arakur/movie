@@ -18,8 +18,6 @@ let render path env =
 
     let script = path |> System.IO.File.ReadAllText
 
-    // printfn "%s" script // DEBUG
-
     let ast = script |> AST.parse
 
     let result =
