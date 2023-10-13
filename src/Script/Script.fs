@@ -126,13 +126,13 @@ type Value =
         | _ -> Error "Invalid type; expected numeral."
 
     static member tryAsInt this =
-        this |> Value.tryAsNumeral >>= Numeral.tryAsInt
+        this |> Value.tryAsNumeral |> Result.bind Numeral.tryAsInt
 
     static member tryAsFloat this =
-        this |> Value.tryAsNumeral >>= Numeral.tryAsFloat
+        this |> Value.tryAsNumeral |> Result.bind Numeral.tryAsFloat
 
     static member tryAsFloatMeas measure this =
-        this |> Value.tryAsNumeral >>= Numeral.tryAsFloatMeas measure
+        this |> Value.tryAsNumeral |> Result.bind (Numeral.tryAsFloatMeas measure)
 
     static member tryAsString this =
         match this with
@@ -187,6 +187,9 @@ module private InnerOperator =
     let addImage = "add-image"
 
     [<Literal>]
+    let addVideo = "add-video"
+
+    [<Literal>]
     let remove = "remove"
 
     [<Literal>]
@@ -201,6 +204,7 @@ module private InnerOperator =
            appearance, 0
            setStyle, 1
            addImage, 0
+           addVideo, 0
            remove, 1
            on, 1
            hflip, 0 |]
@@ -372,9 +376,11 @@ module Interpreter =
                     match fieldName with
                     | "color" ->
                         let! r, g, b =
-                            content |> Value.tryAsTuple >>= (Seq.map Value.tryAsInt >> ResultExt.sequence)
+                            content
+                            |> Value.tryAsTuple
+                            |> Result.bind (Seq.map Value.tryAsInt >> ResultExt.sequence)
                             |>> Array.ofSeq
-                            >>= ArrayExt.tryAsTuple3 "Expected a tuple with 3 elements."
+                            |> Result.bind (ArrayExt.tryAsTuple3 "Expected a tuple with 3 elements.")
 
                         let font'' =
                             { font' with
@@ -421,9 +427,11 @@ module Interpreter =
                 | _ -> return! Error "Invalid statement."
             }
 
+        let init = Ok(env, fontState)
+
         block
         |> Option.toResultWith "Expected block."
-        >>= Seq.fold runFontStatement (Ok(env, fontState))
+        |> Result.bind (Seq.fold runFontStatement init)
 
     //
 
@@ -441,13 +449,13 @@ module Interpreter =
 
                 match statement with
                 | Gets(targetExpr, contentExpr) ->
-                    let! fieldName = targetExpr |> tryEval env >>= Value.tryAsString
+                    let! fieldName = targetExpr |> tryEval env |> Result.bind Value.tryAsString
 
                     let pos' = pos |> Option.defaultValue { X = None; Y = None }
 
                     match fieldName with
                     | "x" ->
-                        let! x = contentExpr |> tryEval env >>= Value.tryAsFloatMeas "px"
+                        let! x = contentExpr |> tryEval env |> Result.bind (Value.tryAsFloatMeas "px")
 
                         let pos'' =
                             { pos' with
@@ -455,7 +463,7 @@ module Interpreter =
 
                         return env, Some pos''
                     | "y" ->
-                        let! y = contentExpr |> tryEval env >>= Value.tryAsFloatMeas "px"
+                        let! y = contentExpr |> tryEval env |> Result.bind (Value.tryAsFloatMeas "px")
 
                         let pos'' =
                             { pos' with
@@ -466,9 +474,11 @@ module Interpreter =
                 | _ -> return! Error "Invalid statement."
             }
 
+        let init = Ok(env, posState)
+
         block
         |> Option.toResultWith "Expected block."
-        >>= Seq.fold runPosStatement (Ok(env, posState))
+        |> Result.bind (Seq.fold runPosStatement init)
 
     type private SizeState =
         { Width: int<Measure.px> option
@@ -512,9 +522,11 @@ module Interpreter =
                 | _ -> return! Error "Invalid statement."
             }
 
+        let init = Ok(env, sizeState)
+
         block
         |> Option.toResultWith "Expected block."
-        >>= Seq.fold runSizeStatement (Ok(env, sizeState))
+        |> Result.bind (Seq.fold runSizeStatement init)
 
     type private ResizeState =
         { Width: int<Measure.px> option
@@ -615,9 +627,11 @@ module Interpreter =
                 | _ -> return! Error "Invalid statement."
             }
 
+        let init = Ok(env, resizeState)
+
         block
         |> Option.toResultWith "Expected block."
-        >>= Seq.fold runResizeStatement (Ok(env, resizeState))
+        |> Result.bind (Seq.fold runResizeStatement init)
 
     type private InitializeState =
         { Font: FontState option
@@ -643,15 +657,15 @@ module Interpreter =
 
                 match statement with
                 | Gets(targetExpr, contentExpr) ->
-                    let! target = targetExpr |> tryEval env >>= Value.tryAsString
+                    let! target = targetExpr |> tryEval env |> Result.bind Value.tryAsString
 
                     match target with
                     | "background" ->
                         let! backgroundTypeValue, backgroundContentValue =
                             contentExpr
                             |> tryEval env
-                            >>= Value.tryAsTuple
-                            >>= ArrayExt.tryAsTuple2 "Expected a tuple with 2 elements."
+                            |> Result.bind Value.tryAsTuple
+                            |> Result.bind (ArrayExt.tryAsTuple2 "Expected a tuple with 2 elements.")
 
                         let! backgroundType = backgroundTypeValue |> Value.tryAsString
 
@@ -678,9 +692,9 @@ module Interpreter =
                             let! r, g, b =
                                 backgroundContentValue
                                 |> Value.tryAsTuple
-                                >>= (Seq.map Value.tryAsInt >> ResultExt.sequence)
+                                |> Result.bind (Seq.map Value.tryAsInt >> ResultExt.sequence)
                                 |>> Array.ofSeq
-                                >>= ArrayExt.tryAsTuple3 "Expected a tuple with 3 elements."
+                                |> Result.bind (ArrayExt.tryAsTuple3 "Expected a tuple with 3 elements.")
 
                             let background = Frame.Background.RGB(r, g, b)
 
@@ -692,7 +706,7 @@ module Interpreter =
                         | _ -> return! Error "Unknown background type."
                     | _ -> return! Error "Invalid assignment."
                 | Do(expr, optBlock) ->
-                    let! fieldName = expr |> tryEval env >>= Value.tryAsString
+                    let! fieldName = expr |> tryEval env |> Result.bind Value.tryAsString
 
                     match fieldName with
                     | "font" ->
@@ -758,17 +772,17 @@ module Interpreter =
 
     let private runAddSpeakerAppearance
         (block: Statement list option)
-        (env: EvalEnv, app: AddSpeakerAppearanceState option)
+        (env: EvalEnv, appState: AddSpeakerAppearanceState option)
         =
         let runAddSpeakerAppearanceStatement
             (acc: Result<EvalEnv * AddSpeakerAppearanceState option, string>)
             (statement: Statement)
             : Result<EvalEnv * AddSpeakerAppearanceState option, string> =
             monad {
-                let! env, app = acc
+                let! env, appState = acc
 
-                let app' =
-                    app
+                let appState' =
+                    appState
                     |> Option.defaultValue
                         { Path = None
                           Pos = None
@@ -776,36 +790,38 @@ module Interpreter =
 
                 match statement with
                 | Do(expr, optBlock) ->
-                    let! fieldName = expr |> tryEval env >>= Value.tryAsString
+                    let! fieldName = expr |> tryEval env |> Result.bind Value.tryAsString
 
                     match fieldName with
                     | "pos" ->
-                        let! env', pos' = runPos optBlock (env, app'.Pos)
-                        let app'' = { app' with Pos = pos' }
-                        return env', Some app''
+                        let! env', pos' = runPos optBlock (env, appState'.Pos)
+                        let appState'' = { appState' with Pos = pos' }
+                        return env', Some appState''
                     | "resize" ->
-                        let! env', resize' = runResize optBlock (env, app'.Resize)
-                        let app'' = { app' with Resize = resize' }
-                        return env', Some app''
+                        let! env', resize' = runResize optBlock (env, appState'.Resize)
+                        let appState'' = { appState' with Resize = resize' }
+                        return env', Some appState''
                     | _ -> return! Error $"Unknown field name `{fieldName}` in appearance."
                 | Gets(targetExpr, contentExpr) ->
-                    let! fieldName = targetExpr |> tryEval env >>= Value.tryAsString
+                    let! fieldName = targetExpr |> tryEval env |> Result.bind Value.tryAsString
                     let! content = contentExpr |> tryEval env
 
                     match fieldName with
                     | "path" ->
                         let! path = content |> Value.tryAsString
 
-                        let app'' = { app' with Path = Some path }
+                        let appState'' = { appState' with Path = Some path }
 
-                        return env, Some app''
+                        return env, Some appState''
                     | _ -> return! Error $"Unknown field name `{fieldName}` in appearance."
                 | _ -> return! Error "Invalid statement."
             }
 
+        let init = Ok(env, appState)
+
         block
         |> Option.toResultWith "Expected block."
-        >>= Seq.fold runAddSpeakerAppearanceStatement (Ok(env, app))
+        |> Result.bind (Seq.fold runAddSpeakerAppearanceStatement init)
 
     type private AddSpeakerState =
         { Name: string option
@@ -831,24 +847,24 @@ module Interpreter =
 
                 match statement with
                 | Gets(targetExpr, contentExpr) ->
-                    let! target = targetExpr |> tryEval env >>= Value.tryAsString
+                    let! target = targetExpr |> tryEval env |> Result.bind Value.tryAsString
 
                     match target with
                     | "name" ->
-                        let! name = contentExpr |> tryEval env >>= Value.tryAsString
+                        let! name = contentExpr |> tryEval env |> Result.bind Value.tryAsString
 
                         let config' = { config with Name = Some name }
 
                         return env, config'
                     | "style" ->
-                        let! style = contentExpr |> tryEval env >>= Value.tryAsString
+                        let! style = contentExpr |> tryEval env |> Result.bind Value.tryAsString
 
                         let config' = { config with Style = Some style }
 
                         return env, config'
                     | _ -> return! Error "Invalid assignment."
                 | Do(expr, optBlock) ->
-                    let! fieldName = expr |> tryEval env >>= Value.tryAsString
+                    let! fieldName = expr |> tryEval env |> Result.bind Value.tryAsString
 
                     match fieldName with
                     | "font" ->
@@ -909,7 +925,11 @@ module Interpreter =
             }
 
         monad {
-            let! speakerName = args |> ArrayExt.tryAsSingleton "Expected one argument." >>= Value.tryAsString
+            let! speakerName =
+                args
+                |> ArrayExt.tryAsSingleton "Expected one argument."
+                |> Result.bind Value.tryAsString
+
             let! block' = block |> Option.toResultWith "Expected block."
             let! config = (Ok(env, initialState), block') ||> Seq.fold runAddSpeakerStatement
             return! buildConfig speakerName config
@@ -927,7 +947,10 @@ module Interpreter =
             [ InnerOperator.on,
               fun (args: Value array) (block: Statement list option) ->
                   monad {
-                      let! layerPath = args |> ArrayExt.tryAsSingleton "Expected one argument." >>= Value.tryAsString
+                      let! layerPath =
+                          args
+                          |> ArrayExt.tryAsSingleton "Expected one argument."
+                          |> Result.bind Value.tryAsString
 
                       if block <> None then
                           do! Error "Expected no block."
@@ -961,13 +984,15 @@ module Interpreter =
                     if block <> None then
                         do! Error "Expected no block."
 
-                    let! s, args = expr |> tryEval env >>= Value.tryAsInnerOperatorApplied
+                    let! s, args = expr |> tryEval env |> Result.bind Value.tryAsInnerOperatorApplied
 
                     let! op = operators.TryFind s |> Option.toResultWith "Unknown inner operator."
                     let! env', f' = op args block
                     return env', f >> f'
                 }
             | _ -> Error "Invalid statement."
+
+        let init = Ok(env, id)
 
         monad {
             do! args |> ArrayExt.tryAsEmpty "Expected no arguments."
@@ -976,7 +1001,7 @@ module Interpreter =
 
             return block'
         }
-        >>= Seq.fold runAppearanceStatement (Ok(env, id))
+        |> Result.bind (Seq.fold runAppearanceStatement init)
         |>> (fun (env, modify) ->
             let state' = movie.ModifySpeaker(state, modify)
             env, state')
@@ -988,7 +1013,10 @@ module Interpreter =
         (env: EvalEnv, state: Frame.MovieState)
         : Result<EvalEnv * Frame.MovieState, string> =
         monad {
-            let! style = args |> ArrayExt.tryAsSingleton "Expected no arguments." >>= Value.tryAsString
+            let! style =
+                args
+                |> ArrayExt.tryAsSingleton "Expected no arguments."
+                |> Result.bind Value.tryAsString
 
             if block.IsSome then
                 do! Error "Expected no block."
@@ -1016,7 +1044,7 @@ module Interpreter =
 
                 match statement with
                 | Gets(targetExpr, contentExpr) ->
-                    let! fieldName = targetExpr |> tryEval env >>= Value.tryAsString
+                    let! fieldName = targetExpr |> tryEval env |> Result.bind Value.tryAsString
                     let! content = contentExpr |> tryEval env
 
                     match fieldName with
@@ -1028,7 +1056,7 @@ module Interpreter =
                         return env, config'
                     | _ -> return! Error $"Unknown field name `{fieldName}` in add-image."
                 | Do(expr, optBlock) ->
-                    let! fieldName = expr |> tryEval env >>= Value.tryAsString
+                    let! fieldName = expr |> tryEval env |> Result.bind Value.tryAsString
 
                     match fieldName with
                     | "pos" ->
@@ -1101,7 +1129,10 @@ module Interpreter =
         (env: EvalEnv, state: Frame.MovieState)
         : Result<EvalEnv * Frame.MovieState, string> =
         monad {
-            let! assetRef = args |> ArrayExt.tryAsSingleton "Expected one argument." >>= Value.tryAsAssetRef
+            let! assetRef =
+                args
+                |> ArrayExt.tryAsSingleton "Expected one argument."
+                |> Result.bind Value.tryAsAssetRef
 
             if block.IsSome then
                 do! Error "Expected no block."
@@ -1124,44 +1155,39 @@ module Interpreter =
           InnerOperator.remove, runRemove ]
         |> Map.ofSeq
 
-    let rec runStatement
-        (movie: Frame.MovieBuilder)
-        (statement: Statement)
-        (env: EvalEnv, state: Frame.MovieState)
-        : Result<EvalEnv * Frame.MovieState, string> =
-
-        match statement with
-        | Do(expr, block) ->
-            monad {
-                let! s, args = expr |> tryEval env >>= Value.tryAsInnerOperatorApplied
-                let! op = statementOperators.TryFind s |> Option.toResultWith "Unknown inner operator."
-                return! op movie args block (env, state)
-            }
-        | At(expr, block) ->
-            monad {
-                let! name = expr |> tryEval env >>= Value.tryAsString
-
-                let state' = movie.SetSpeaker(state, name)
-
-                match block with
-                | None -> return (env, state')
-                | Some block ->
-                    // TODO: ローカルステートメントを記述出来るようにする．
-                    return!
-                        (Ok(env, state'), block)
-                        ||> Seq.fold (fun acc statement -> acc >>= runStatement movie statement)
-            }
-        | Gets(_, _) -> Error "Assignment is not allowed at the top level."
-        | BindsTo(_, _) -> Error "Binding is not allowed at the top level."
-        | Talk talk ->
-            let speech' = talk.Speech |> String.replace "\n" "" |> String.replace " " ""
-            Ok(env, movie.YieldFrame(state, talk.Subtitle, speech'))
-
     //
 
     let run (movie: Frame.MovieBuilder) (ast: AST) (env: EvalEnv, state: Frame.MovieState) =
-        (Ok(env, state), ast.Statements)
-        ||> Seq.fold (fun acc statement -> acc >>= runStatement movie statement)
+        let rec runStatement
+            (statement: Statement)
+            (acc: Result<EvalEnv * Frame.MovieState, string>)
+            : Result<EvalEnv * Frame.MovieState, string> =
+            monad {
+                let! env, state = acc
+
+                match statement with
+                | Do(expr, block) ->
+                    let! s, args = expr |> tryEval env |> Result.bind Value.tryAsInnerOperatorApplied
+                    let! op = statementOperators.TryFind s |> Option.toResultWith "Unknown inner operator."
+                    return! op movie args block (env, state)
+                | At(expr, block) ->
+                    let! name = expr |> tryEval env |> Result.bind Value.tryAsString
+
+                    let state' = movie.SetSpeaker(state, name)
+
+                    match block with
+                    | None -> return env, state'
+                    | Some block ->
+                        // TODO: ローカルステートメントを記述出来るようにする．
+                        return! (block, Ok(env, state')) ||> Seq.foldBack runStatement
+                | Gets(_, _) -> return! Error "Assignment is not allowed at the top level."
+                | BindsTo(_, _) -> return! Error "Binding is not allowed at the top level."
+                | Talk talk ->
+                    let speech' = talk.Speech |> String.replace "\n" "" |> String.replace " " ""
+                    return env, movie.YieldFrame(state, talk.Subtitle, speech')
+            }
+
+        (ast.Statements, Ok(env, state)) ||> Seq.foldBack runStatement
 
     let build (movie: Frame.MovieBuilder) (env: EvalEnv) (ast: AST) =
         let state = Frame.MovieState.empty
