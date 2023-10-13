@@ -7,38 +7,10 @@ open FSharpx.Collections
 
 type Name = string
 
-type SpeakerFont(?color: Color, ?size: float<pt>, ?weight: Typst.Weight, ?family: string) =
-    member val Color = color with get
-    member val Size = size with get
-    member val Weight = weight with get
-    member val Family = family with get
-
-    member this.WithColor(color: Color) =
-        SpeakerFont(color = color, ?size = this.Size, ?weight = this.Weight, ?family = this.Family)
-
-    member this.WithColorRGB(r: int, g: int, b: int) = this.WithColor(RGB(r, g, b))
-
-    member this.WithColorRGBA(r: int, g: int, b: int, a: int) = this.WithColor(RGBA(r, g, b, a))
-
-    member this.WithSize(size: float<pt>) =
-        SpeakerFont(?color = this.Color, size = size, ?weight = this.Weight, ?family = this.Family)
-
-    member this.WithWeight(weight: Typst.Weight) =
-        SpeakerFont(?color = this.Color, ?size = this.Size, weight = weight, ?family = this.Family)
-
-    member this.WithFamily(family: string) =
-        SpeakerFont(?color = this.Color, ?size = this.Size, ?weight = this.Weight, family = family)
-
-    member this.DefaultWith(subtitleFont: SubtitleFont) =
-        { Color = this.Color |> Option.defaultValue subtitleFont.Color
-          Size = this.Size |> Option.defaultValue subtitleFont.Size
-          Weight = this.Weight |> Option.defaultValue subtitleFont.Weight
-          Family = this.Family |> Option.defaultValue subtitleFont.Family }
-
 type SpeakerState =
     { Name: Name
       Style: string
-      Font: SpeakerFont
+      Font: SubtitleFont
       Appearance: FrameAppearance }
 
     member this.WithTalk(talk: string) : Voicevox.Speech =
@@ -80,9 +52,9 @@ type SubtitleState =
       Pos: Pos
       Size: Size }
 
-    member this.WithText(text: string, speakerFont: SpeakerFont) =
+    member this.WithText(text: string, subtitleFont: SubtitleFont) =
         { Text = text
-          Font = speakerFont.DefaultWith this.Font
+          Font = subtitleFont
           Pos = this.Pos
           Size = this.Size }
 
@@ -112,10 +84,10 @@ type MovieState =
           CurrentSpeaker = None
           Subtitle =
             { Font =
-                { Color = RGB(0, 0, 0)
-                  Size = 0.0<pt>
-                  Weight = Typst.Weight.OfInt 0
-                  Family = "" }
+                { Color = None
+                  Size = None
+                  Weight = None
+                  Family = [] }
               Pos = { X = 0<px>; Y = 0<px> }
               Size = { Width = 0<px>; Height = 0<px> } }
           Assets = { Images = Map.empty }

@@ -11,6 +11,8 @@ let evalEnv =
         .WithInnerOperatorSynonym("立ち絵", "appearance")
         .WithInnerOperatorSynonym("スタイル", "set-style")
         .WithInnerOperatorSynonym("画像", "add-image")
+        .WithInnerOperatorSynonym("音声", "add-audio")
+        .WithInnerOperatorSynonym("動画", "add-video")
         .WithInnerOperatorSynonym("消去", "remove")
 
 let render path env =
@@ -57,7 +59,7 @@ do
         match segments with
         | [ "exit" ] -> loop <- false
         | [ "render"; path ] ->
-            if System.IO.File.Exists(path) then
+            if System.IO.File.Exists path then
                 render path env
             else
                 printfn $"File not found: {path}"

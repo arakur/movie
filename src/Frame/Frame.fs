@@ -4,10 +4,10 @@ open Measure
 open Types
 
 type SubtitleFont =
-    { Color: Color
-      Size: float<pt>
-      Weight: Typst.Weight
-      Family: string }
+    { Color: Color option
+      Size: float<pt> option
+      Weight: Typst.Weight option
+      Family: string list }
 
 type Subtitle =
     { Text: string

@@ -48,9 +48,9 @@ type Page =
       Margin: float<pt> }
 
 type Text =
-    { Size: float<pt>
-      Weight: Weight
-      Fill: Color }
+    { Size: float<pt> option
+      Weight: Weight option
+      Fill: Color option }
 
 type TypstSource =
     { Page: Page
@@ -67,13 +67,22 @@ type TypstSource =
                 this.Page.Height
                 this.Page.Margin
 
+        let size = this.Text.Size |> Option.map (sprintf "size: %fpt")
+        let weight = this.Text.Weight |> Option.map (fun w -> $"weight: {w.Compose()}")
+        let fill = this.Text.Fill |> Option.map (fun c -> $"fill: {c.Compose()}")
+
+        let font =
+            if this.FontFamily = [] then
+                None
+            else
+                let content = this.FontFamily |> Seq.map (sprintf "\"%s\"") |> String.concat " "
+                Some $"font: {content}"
+
         let text =
-            sprintf
-                "#set text(size: %fpt, weight: %s, fill: %s, font: %s)"
-                this.Text.Size
-                (this.Text.Weight.Compose())
-                (this.Text.Fill.Compose())
-                (this.FontFamily |> Seq.map (sprintf "\"%s\"") |> String.concat " ")
+            [ size; weight; fill; font ]
+            |> List.choose id
+            |> String.concat ", "
+            |> sprintf "#set text(%s)"
 
         let content = this.Content.Replace("\n", "\\\n")
 

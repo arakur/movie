@@ -38,12 +38,15 @@ type FrameOutput =
                     { Page =
                         { Width = px.asFloatPx speech.Subtitle.Size.Width * pt.perPx
                           Height = px.asFloatPx speech.Subtitle.Size.Height * pt.perPx
-                          Margin = speech.Subtitle.Font.Size * 0.5 } // TODO: Magic number.
+                          Margin =
+                            speech.Subtitle.Font.Size
+                            |> Option.map (fun size -> size * 0.5) // TODO: Magic number.
+                            |> Option.defaultValue 5.0<pt> } // TODO: Magic number.
                       Text =
                         { Size = speech.Subtitle.Font.Size
                           Weight = speech.Subtitle.Font.Weight
                           Fill = speech.Subtitle.Font.Color }
-                      FontFamily = [ speech.Subtitle.Font.Family ]
+                      FontFamily = speech.Subtitle.Font.Family
                       Content = speech.Subtitle.Text }
 
                 task {

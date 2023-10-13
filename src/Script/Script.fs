@@ -6,7 +6,7 @@ open FSharpPlus.Data
 type RevList<'a> = { Contents: 'a list; Length: int }
 
 module RevList =
-    let empty<'a> = { Contents = []; Length = 0 }
+    let empty<'a> = ({ Contents = []; Length = 0 }: RevList<'a>)
 
     let add<'a> v (this: RevList<'a>) =
         { Contents = v :: this.Contents
@@ -29,7 +29,7 @@ module private ResultExt =
                 let! x = x
                 return! Ok(acc |> List.cons x)
             })
-        |>> Seq.rev
+        |> Result.map Seq.rev
 
 module private ArrayExt =
     let tryAsEmpty<'a, 'e> (message: 'e) (xs: 'a array) : Result<unit, 'e> =
@@ -161,12 +161,12 @@ type Value =
 
     static member tryAdd lhs rhs =
         match lhs, rhs with
-        | Numeral lhs, Numeral rhs -> Numeral.tryAdd lhs rhs |>> Value.Numeral
+        | Numeral lhs, Numeral rhs -> Numeral.tryAdd lhs rhs |> Result.map Numeral
         | _ -> Error "Invalid type; expected numeral."
 
     static member trySub lhs rhs =
         match lhs, rhs with
-        | Numeral lhs, Numeral rhs -> Numeral.trySub lhs rhs |>> Value.Numeral
+        | Numeral lhs, Numeral rhs -> Numeral.trySub lhs rhs |> Result.map Numeral
         | _ -> Error "Invalid type; expected numeral."
 
 module private InnerOperator =
@@ -187,6 +187,9 @@ module private InnerOperator =
     let addImage = "add-image"
 
     [<Literal>]
+    let addAudio = "add-audio"
+
+    [<Literal>]
     let addVideo = "add-video"
 
     [<Literal>]
@@ -204,6 +207,7 @@ module private InnerOperator =
            appearance, 0
            setStyle, 1
            addImage, 0
+           addAudio, 0
            addVideo, 0
            remove, 1
            on, 1
@@ -338,17 +342,33 @@ module Interpreter =
                 return! f lhs rhs
             }
         | Expr.Tuple exprs ->
-            exprs |> List.map (tryEval env) |> ResultExt.sequence
-            |>> Seq.toArray
-            |>> Value.Tuple
+            exprs
+            |> List.map (tryEval env)
+            |> ResultExt.sequence
+            |> Result.map Seq.toArray
+            |> Result.map Value.Tuple
 
     //
 
     type private FontState =
         { Color: Types.Color option
-          Family: string option
+          Family: string RevList
           Size: float<Measure.pt> option
           Weight: Typst.Weight option }
+
+        static member tryCompose(this: FontState) : Result<Frame.SubtitleFont, string> =
+            monad {
+                let color = this.Color
+                let family = this.Family |> RevList.toList
+                let size = this.Size
+                let weight = this.Weight
+
+                return
+                    { Color = color
+                      Family = family
+                      Size = size
+                      Weight = weight }
+            }
 
     let private runFont (block: Statement list option) (env: EvalEnv, fontState: FontState option) =
         let runFontStatement
@@ -369,7 +389,7 @@ module Interpreter =
                             { Color = None
                               Size = None
                               Weight = None
-                              Family = None }
+                              Family = RevList.empty }
 
                     let! fieldName = target |> Value.tryAsString
 
@@ -379,7 +399,7 @@ module Interpreter =
                             content
                             |> Value.tryAsTuple
                             |> Result.bind (Seq.map Value.tryAsInt >> ResultExt.sequence)
-                            |>> Array.ofSeq
+                            |> Result.map Array.ofSeq
                             |> Result.bind (ArrayExt.tryAsTuple3 "Expected a tuple with 3 elements.")
 
                         let font'' =
@@ -421,7 +441,11 @@ module Interpreter =
                         return! tryNamedWeight () |> ResultExt.orElse tryIntWeight
                     | "family" ->
                         let! family = content |> Value.tryAsString
-                        let font'' = { font' with Family = Some family }
+
+                        let font'' =
+                            { font' with
+                                Family = font'.Family |> RevList.add family }
+
                         return env, Some font''
                     | _ -> return! Error $"Unknown field name `{fieldName}` in font."
                 | _ -> return! Error "Invalid statement."
@@ -438,6 +462,16 @@ module Interpreter =
     type private PosState =
         { X: int<Measure.px> option
           Y: int<Measure.px> option }
+
+        static member tryCompose(this: PosState) : Result<Types.Pos, string> =
+            monad {
+                let! posX = this.X |> Option.toResultWith "X is not set."
+                let! posY = this.Y |> Option.toResultWith "Y is not set."
+
+                return
+                    { Types.Pos.X = posX
+                      Types.Pos.Y = posY }
+            }
 
     let private runPos (block: Statement list option) (env: EvalEnv, posState: PosState option) =
         let runPosStatement
@@ -483,6 +517,16 @@ module Interpreter =
     type private SizeState =
         { Width: int<Measure.px> option
           Height: int<Measure.px> option }
+
+        static member tryCompose(this: SizeState) : Result<Types.Size, string> =
+            monad {
+                let! width = this.Width |> Option.toResultWith "Width is not set."
+                let! height = this.Height |> Option.toResultWith "Height is not set."
+
+                return
+                    { Types.Size.Width = width
+                      Types.Size.Height = height }
+            }
 
     let private runSize (block: Statement list option) (env: EvalEnv, sizeState: SizeState option) =
         let runSizeStatement
@@ -639,6 +683,32 @@ module Interpreter =
           Size: SizeState option
           Background: Frame.Background option }
 
+        static member tryCompose this =
+            monad {
+                let! font =
+                    this.Font
+                    |> Option.toResultWith "Font is not set."
+                    |> Result.bind FontState.tryCompose
+
+                let! pos =
+                    this.Pos
+                    |> Option.toResultWith "Pos is not set."
+                    |> Result.bind PosState.tryCompose
+
+                let! size =
+                    this.Size
+                    |> Option.toResultWith "Size is not set."
+                    |> Result.bind SizeState.tryCompose
+
+                let! background = this.Background |> Option.toResultWith "Background is not set."
+
+                return
+                    { Frame.Initialize.Font = font
+                      Frame.Initialize.Pos = pos
+                      Frame.Initialize.Size = size
+                      Frame.Initialize.Background = background }
+            }
+
     let runInitialize
         (movie: Frame.MovieBuilder)
         (args: Value array)
@@ -693,7 +763,7 @@ module Interpreter =
                                 backgroundContentValue
                                 |> Value.tryAsTuple
                                 |> Result.bind (Seq.map Value.tryAsInt >> ResultExt.sequence)
-                                |>> Array.ofSeq
+                                |> Result.map Array.ofSeq
                                 |> Result.bind (ArrayExt.tryAsTuple3 "Expected a tuple with 3 elements.")
 
                             let background = Frame.Background.RGB(r, g, b)
@@ -724,33 +794,7 @@ module Interpreter =
 
         let buildConfig (env: EvalEnv, config: InitializeState) =
             monad {
-                let! font = config.Font |> Option.toResultWith "Font is not set."
-                let! pos = config.Pos |> Option.toResultWith "Pos is not set."
-                let! size = config.Size |> Option.toResultWith "Size is not set."
-                let! background = config.Background |> Option.toResultWith "Background is not set."
-
-                let! fontColor = font.Color |> Option.toResultWith "Font color is not set."
-                let! fontSize = font.Size |> Option.toResultWith "Font size is not set."
-                let! fontWeight = font.Weight |> Option.toResultWith "Font weight is not set."
-                let! fontFamily = font.Family |> Option.toResultWith "Font family is not set."
-
-                let! posX = pos.X |> Option.toResultWith "Pos X is not set."
-                let! posY = pos.Y |> Option.toResultWith "Pos Y is not set."
-
-                let! sizeWidth = size.Width |> Option.toResultWith "Size width is not set."
-                let! sizeHeight = size.Height |> Option.toResultWith "Size height is not set."
-
-                let config' =
-                    { Frame.Initialize.Font =
-                        { Color = fontColor
-                          Size = fontSize
-                          Weight = fontWeight
-                          Family = fontFamily }
-                      Frame.Initialize.Pos = { X = posX; Y = posY }
-                      Frame.Initialize.Size =
-                        { Width = sizeWidth
-                          Height = sizeHeight }
-                      Frame.Initialize.Background = background }
+                let! config' = config |> InitializeState.tryCompose
 
                 let state' = movie.Initialize((), config')
                 return env, state'
@@ -769,6 +813,29 @@ module Interpreter =
         { Path: string option
           Pos: PosState option
           Resize: ResizeState option }
+
+        static member tryCompose(this: AddSpeakerAppearanceState) : Result<Frame.FrameAppearance, string> =
+            monad {
+                let! path = this.Path |> Option.toResultWith "Path is not set."
+
+                let! pos =
+                    this.Pos
+                    |> Option.toResultWith "Pos is not set."
+                    |> Result.bind PosState.tryCompose
+
+                let! resize =
+                    this.Resize
+                    |> function
+                        | None -> Ok None
+                        | Some resize -> resize.TryToResize
+
+                let appearance = Appearance.Appearance.LoadDirectory path
+
+                return
+                    { Appearance = appearance
+                      Pos = pos
+                      Resize = resize }
+            }
 
     let private runAddSpeakerAppearance
         (block: Statement list option)
@@ -829,6 +896,28 @@ module Interpreter =
           Font: FontState option
           Appearance: AddSpeakerAppearanceState option }
 
+        static member tryCompose this =
+            monad {
+                let! name = this.Name |> Option.toResultWith "Name is not set."
+                let! style = this.Style |> Option.toResultWith "Style is not set."
+
+                let! font =
+                    this.Font
+                    |> Option.toResultWith "Font is not set."
+                    |> Result.bind FontState.tryCompose
+
+                let! appearance =
+                    this.Appearance
+                    |> Option.toResultWith "Appearance is not set."
+                    |> Result.bind AddSpeakerAppearanceState.tryCompose
+
+                return
+                    { Frame.SpeakerState.Name = name
+                      Frame.SpeakerState.Style = style
+                      Frame.SpeakerState.Font = font
+                      Frame.SpeakerState.Appearance = appearance }
+            }
+
     let private runAddSpeaker
         (movie: Frame.MovieBuilder)
         (args: Value array)
@@ -877,50 +966,10 @@ module Interpreter =
                 | _ -> return! Error "Invalid statement."
             }
 
-        let buildConfig speakerName (env: EvalEnv, config: AddSpeakerState) =
+        let buildConfig speakerName (env: EvalEnv, addSpeaker: AddSpeakerState) =
             monad {
-                let! name = config.Name |> Option.toResultWith "Name is not set."
-                let! style = config.Style |> Option.toResultWith "Style is not set."
-                let! font = config.Font |> Option.toResultWith "Font is not set."
-                let! appearance = config.Appearance |> Option.toResultWith "Appearance is not set."
-
-                let fontColor = font.Color
-                let fontSize = font.Size
-                let fontWeight = font.Weight
-                let fontFamily = font.Family
-
-                let! appearancePath = appearance.Path |> Option.toResultWith "Path is not set."
-
-                let! appearancePos = appearance.Pos |> Option.toResultWith "Pos is not set."
-
-                let! posX = appearancePos.X |> Option.toResultWith "Pos X is not set."
-                let! posY = appearancePos.Y |> Option.toResultWith "Pos Y is not set."
-
-                let appearanceResize = appearance.Resize
-
-                let! resize' =
-                    appearanceResize
-                    |> function
-                        | None -> Ok None
-                        | Some resize -> resize.TryToResize
-
-                let config' =
-                    { Frame.SpeakerState.Name = name
-                      Frame.SpeakerState.Style = style
-                      Frame.SpeakerState.Font =
-                        Frame.SpeakerFont(
-                            ?color = fontColor,
-                            ?size = fontSize,
-                            ?weight = fontWeight,
-                            ?family = fontFamily
-                        )
-                      Frame.SpeakerState.Appearance =
-                        { Appearance = Appearance.Appearance.LoadDirectory appearancePath
-                          Pos = { X = posX; Y = posY }
-                          Resize = resize' } }
-
-                let state' = movie.AddSpeaker(state, speakerName, config')
-
+                let! config = addSpeaker |> AddSpeakerState.tryCompose
+                let state' = movie.AddSpeaker(state, speakerName, config)
                 return env, state'
             }
 
@@ -1002,7 +1051,7 @@ module Interpreter =
             return block'
         }
         |> Result.bind (Seq.fold runAppearanceStatement init)
-        |>> (fun (env, modify) ->
+        |> Result.map (fun (env, modify) ->
             let state' = movie.ModifySpeaker(state, modify)
             env, state')
 
@@ -1097,10 +1146,10 @@ module Interpreter =
 
             let! path = config.Path |> Option.toResultWith "Path is not set."
 
-            let! pos = config.Pos |> Option.toResultWith "Pos is not set."
-
-            let! posX = pos.X |> Option.toResultWith "Pos X is not set."
-            let! posY = pos.Y |> Option.toResultWith "Pos Y is not set."
+            let! pos =
+                config.Pos
+                |> Option.toResultWith "Pos is not set."
+                |> Result.bind PosState.tryCompose
 
             let resize = config.Resize
 
@@ -1114,7 +1163,7 @@ module Interpreter =
 
             let assetId = System.Guid.NewGuid().ToString("N")
 
-            let state' = movie.AddImage(state, assetId, path, { X = posX; Y = posY }, resize')
+            let state' = movie.AddImage(state, assetId, path, pos, resize')
 
             let env'' =
                 env'.WithVariable(varName, Value.AssetRef { Type = AssetType.Image; Id = assetId })
@@ -1141,6 +1190,13 @@ module Interpreter =
             | AssetType.Image ->
                 let state' = movie.RemoveImage(state, assetRef.Id)
                 return env, state'
+            // TODO
+            // | AssetType.Audio ->
+            //     let state' = movie.RemoveAudio(state, assetRef.Id)
+            //     return env, state'
+            // | AssetType.Video ->
+            //     let state' = movie.RemoveVideo(state, assetRef.Id)
+            //     return env, state'
             | _ -> return failwith "Not implemented yet." // TODO
         }
 
@@ -1152,6 +1208,8 @@ module Interpreter =
           InnerOperator.appearance, runAppearance
           InnerOperator.setStyle, runSetStyle
           InnerOperator.addImage, runAddImage
+          //   InnerOperator.addAudio, runAddAudio
+          //   InnerOperator.addVideo, runAddVideo
           InnerOperator.remove, runRemove ]
         |> Map.ofSeq
 
