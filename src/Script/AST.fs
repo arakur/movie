@@ -16,6 +16,7 @@ type Associativity =
 
 type Talk = { Subtitle: string; Speech: string }
 
+[<RequireQualifiedAccess>]
 type Pattern = Variable of string
 
 [<RequireQualifiedAccess>]
@@ -31,7 +32,7 @@ type Statement =
     | Do of Expr * block: Statement list option
     | At of Expr * block: Statement list option
     | Gets of Expr * Expr
-    | BindsTo of Expr * Pattern
+    | BindsTo of Expr option * Pattern
     | Talk of Talk
 
 type AST = { Statements: Statement list }

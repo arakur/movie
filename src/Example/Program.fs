@@ -5,16 +5,18 @@ open Parser
 
 open FSharpPlus
 
+let evalEnv =
+    EvalEnv
+        .prelude()
+        .WithInnerOperatorSynonym("立ち絵", "appearance")
+        .WithInnerOperatorSynonym("スタイル", "set-style")
+        .WithInnerOperatorSynonym("画像", "add-image")
+        .WithInnerOperatorSynonym("消去", "remove")
+
 let render path env =
     printfn "Rendering..."
 
     let output = "output/output.mp4"
-
-    let evalEnv =
-        EvalEnv
-            .prelude()
-            .WithInnerOperatorSynonym("立ち絵", "appearance")
-            .WithInnerOperatorSynonym("スタイル", "set-style")
 
     let script = path |> System.IO.File.ReadAllText
 
@@ -38,25 +40,43 @@ let render path env =
         printfn "Done."
 
 do
-    printfn "Ready for rendering..."
+    // DEBUG
 
-    use env = new Env("tmp")
+    let path = "script/script.txt"
 
-    let mutable loop = true
+    let script = path |> System.IO.File.ReadAllText
 
-    printfn "`render` to render, `exit` to exit."
+    let ast = script |> AST.parse
 
-    while loop do
-        printf "command: "
-        let input = System.Console.ReadLine()
+    let result =
+        try
+            ast >>= Interpreter.build movie evalEnv
+        with msg ->
+            Error $"Error: {msg}"
 
-        let segments = input |> String.split [ " " ] |> Seq.toList
+    match result with
+    | Error msg -> printfn "Error: %s" msg
+    | Ok movieState -> printfn "Ok: \n%A" movieState.Assets
 
-        match segments with
-        | [ "exit" ] -> loop <- false
-        | [ "render"; path ] ->
-            if System.IO.File.Exists(path) then
-                render path env
-            else
-                printfn $"File not found: {path}"
-        | _ -> printfn "Unknown command."
+// printfn "Ready for rendering..."
+
+// use env = new Env("tmp")
+
+// let mutable loop = true
+
+// printfn "`render` to render, `exit` to exit."
+
+// while loop do
+//     printf "command: "
+//     let input = System.Console.ReadLine()
+
+//     let segments = input |> String.split [ " " ] |> Seq.toList
+
+//     match segments with
+//     | [ "exit" ] -> loop <- false
+//     | [ "render"; path ] ->
+//         if System.IO.File.Exists(path) then
+//             render path env
+//         else
+//             printfn $"File not found: {path}"
+//     | _ -> printfn "Unknown command."

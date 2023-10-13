@@ -12,7 +12,6 @@
     family <- "Noto Sans CJK JP"
   pos: x <- 460px; y <- 700px
   size: width <- 1000px; height <- 300px
-  // background <- (video, sample/sample-10s.mp4)
   background <- (image, sample/okumono-akicheck1.png)
 
 // 話者の追加
@@ -41,8 +40,15 @@
 
 // ここから本編
 
+#画像:
+  path <- sample/gopher.png
+  pos: x <- 500px; y <- 100px
+  resize: scale <- 0.5
+  => #gopher
+
 @ つむぎ:
   > モナドは単なる自己{関手|かんしゅ}の圏におけるモノイド対象だよ．
+  #消去 #gopher
   #立ち絵:
     #on ほっぺ/かげり
     #on 目/基本目セット/黒目/目逸らし

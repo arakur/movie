@@ -14,6 +14,19 @@ let rec private from (nodes: Lexer.Node list) =
                 let! content' = Expr.tryFrom content
                 return Gets(target', content')
             }
+        | Intermediate.BindsTo(target, pattern) ->
+            monad {
+                let! target' =
+                    match target with
+                    | None -> Ok None
+                    | Some target -> Expr.tryFrom target |>> Some
+
+                let pattern' =
+                    match pattern with
+                    | Parser.Pattern.Variable name -> Pattern.Variable name
+
+                return BindsTo(target', pattern')
+            }
 
     let rec statements nodes currentRev =
         match nodes with

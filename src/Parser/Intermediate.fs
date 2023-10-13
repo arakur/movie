@@ -12,10 +12,14 @@ type private IntermediateExpr =
     | Tuple of IntermediateExpr list
 
 [<RequireQualifiedAccess>]
+type Pattern = Variable of string
+
+[<RequireQualifiedAccess>]
 type private Intermediate =
     | Do of IntermediateExpr
     | At of IntermediateExpr
     | Gets of IntermediateExpr * IntermediateExpr
+    | BindsTo of IntermediateExpr option * Pattern
 
     static member initFrom(line: Lexer.LineNode list) =
         let singleNode (node: Lexer.LineNode) =
@@ -140,8 +144,33 @@ type private Intermediate =
                 return Gets(target', content')
             }
 
+        // source => #variable
+        // => #variable
+        let parseBindsTo (line: Lexer.LineNode list) =
+            let rec findBindsTo (prev: Lexer.LineNode list) (line: Lexer.LineNode list) =
+                match line with
+                | Lexer.LineNode.BindsTo :: rest -> Ok(prev |> List.rev, rest)
+                | node :: rest -> findBindsTo (node :: prev) rest
+                | _ -> Error "Expected `->`."
+
+            monad {
+                let! target, pattern = findBindsTo [] line
+
+                match target, pattern with
+                | [], [ Lexer.LineNode.Variable name ] -> return BindsTo(None, Pattern.Variable name)
+                | _, [ Lexer.LineNode.Variable name ] ->
+                    let! target', targetRest = parseBinOpSeries' target
+
+                    if targetRest <> [] then
+                        do! Error "Expected end of line."
+
+                    return BindsTo(Some target', Pattern.Variable name)
+                | _ -> return! Error "Expected variable."
+            }
+
         parseAt line
         |> Result.bindError (fun _ -> parseGets line)
+        |> Result.bindError (fun _ -> parseBindsTo line)
         |> Result.bindError (fun _ ->
             parseBinOpSeries' line
             |> Result.bind (function

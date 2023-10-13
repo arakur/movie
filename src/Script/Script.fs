@@ -100,6 +100,15 @@ type Numeral =
         | _ -> Error "Invalid type; expected same measure."
 
 [<RequireQualifiedAccess>]
+type AssetType =
+    | Image
+    | Video
+    | Audio
+    | Subtitle
+
+type AssetRef = { Type: AssetType; Id: string }
+
+[<RequireQualifiedAccess>]
 type Value =
     | Numeral of Numeral
     | String of string
@@ -109,6 +118,7 @@ type Value =
     | InnerOperator of string
     | InnerOperatorPartiallyApplied of string * arity: int * Value RevList
     | InnerOperatorApplied of string * Value array
+    | AssetRef of AssetRef
 
     static member tryAsNumeral this =
         match this with
@@ -144,6 +154,11 @@ type Value =
         | InnerOperatorApplied(inner, args) -> Ok(inner, args)
         | _ -> Error "Invalid type; expected inner operator with full arguments."
 
+    static member tryAsAssetRef this =
+        match this with
+        | AssetRef asset -> Ok asset
+        | _ -> Error "Invalid type; expected asset reference."
+
     static member tryAdd lhs rhs =
         match lhs, rhs with
         | Numeral lhs, Numeral rhs -> Numeral.tryAdd lhs rhs |>> Value.Numeral
@@ -169,13 +184,26 @@ module private InnerOperator =
     let setStyle = "set-style"
 
     [<Literal>]
+    let addImage = "add-image"
+
+    [<Literal>]
+    let remove = "remove"
+
+    [<Literal>]
     let on = "on"
 
     [<Literal>]
     let hflip = "hflip"
 
     let innerOperators =
-        [| initialize, 0; addSpeaker, 1; appearance, 0; setStyle, 1; on, 1; hflip, 0 |]
+        [| initialize, 0
+           addSpeaker, 1
+           appearance, 0
+           setStyle, 1
+           addImage, 0
+           remove, 1
+           on, 1
+           hflip, 0 |]
 
 module private BinaryOperators =
     [<Literal>]
@@ -185,11 +213,6 @@ module private BinaryOperators =
     let sub = "-"
 
     let binaryOperators = [| add, Value.tryAdd; sub, Value.trySub |]
-
-type IEvalEnv =
-    abstract member TryVariable: string -> Value option
-    abstract member TryArityInnerOperator: string -> int option
-    abstract member TryBinaryOperator: string -> (Value -> Value -> Result<Value, string>) option
 
 type EvalEnv
     (
@@ -235,17 +258,19 @@ type EvalEnv
         | Some 0 -> this.WithVariable(var, Value.InnerOperatorApplied(inner, [||]))
         | Some _ -> this.WithVariable(var, Value.InnerOperator inner)
 
-    interface IEvalEnv with
-        member this.TryVariable v = this.Variables.TryFind v
-        member this.TryArityInnerOperator op = this.InnerOperators.TryFind op
-        member this.TryBinaryOperator op = this.BinaryOperators.TryFind op
+    member this.TryVariable(var: string) = this.Variables.TryFind var
+
+    member this.TryBinaryOperator(op: string) = this.BinaryOperators.TryFind op
+
+    member this.TryArityInnerOperator(op: string) = this.InnerOperators.TryFind op
 
 module Value =
-    let tryApply (env: IEvalEnv) (arg: Value) (f: Value) =
+    let tryApply (env: EvalEnv) (arg: Value) (f: Value) =
         match f with
         | Value.Numeral _
         | Value.String _
-        | Value.Tuple _ -> Error "Cannot apply."
+        | Value.Tuple _
+        | Value.AssetRef _ -> Error "Cannot apply."
         | Value.BinaryOperator op -> Ok <| Value.BinaryOperatorLeftApplied(op, arg)
         | Value.BinaryOperatorLeftApplied(op, lhs) ->
             monad {
@@ -274,7 +299,7 @@ module Value =
                 Ok(Value.InnerOperatorPartiallyApplied(op, arity, args |> RevList.add arg))
 
 module Interpreter =
-    let rec tryEval (env: IEvalEnv) (expr: Expr) : Result<Value, string> =
+    let rec tryEval (env: EvalEnv) (expr: Expr) : Result<Value, string> =
         match expr with
         | Expr.Numeral(n, m) ->
             if n |> String.contains '.' then
@@ -321,82 +346,84 @@ module Interpreter =
           Size: float<Measure.pt> option
           Weight: Typst.Weight option }
 
-    let private runFont (block: Statement list option) (env: IEvalEnv, fontState: FontState option) =
+    let private runFont (block: Statement list option) (env: EvalEnv, fontState: FontState option) =
+        let runFontStatement
+            (acc: Result<EvalEnv * FontState option, string>)
+            (statement: Statement)
+            : Result<EvalEnv * FontState option, string> =
+            monad {
+                let! env, font = acc
+
+                match statement with
+                | Gets(targetExpr, contentExpr) ->
+                    let! target = targetExpr |> tryEval env
+                    let! content = contentExpr |> tryEval env
+
+                    let font' =
+                        font
+                        |> Option.defaultValue
+                            { Color = None
+                              Size = None
+                              Weight = None
+                              Family = None }
+
+                    let! fieldName = target |> Value.tryAsString
+
+                    match fieldName with
+                    | "color" ->
+                        let! r, g, b =
+                            content |> Value.tryAsTuple >>= (Seq.map Value.tryAsInt >> ResultExt.sequence)
+                            |>> Array.ofSeq
+                            >>= ArrayExt.tryAsTuple3 "Expected a tuple with 3 elements."
+
+                        let font'' =
+                            { font' with
+                                Color = Some(Types.RGB(r, g, b)) }
+
+                        return env, Some font''
+                    | "size" ->
+                        let! size = content |> Value.tryAsFloatMeas "pt"
+
+                        let font'' =
+                            { font' with
+                                Size = Some(size * 1.<Measure.pt>) }
+
+                        return env, Some font''
+                    | "weight" ->
+                        let tryNamedWeight () =
+                            monad {
+                                let! name = content |> Value.tryAsString
+
+                                let! weight = name |> Typst.Weight.tryFrom |> Option.toResultWith "Invalid weight name."
+
+                                let font'' = { font' with Weight = Some weight }
+
+                                return env, Some font''
+                            }
+
+                        let tryIntWeight () =
+                            monad {
+                                let! weightValue = content |> Value.tryAsInt
+
+                                let font'' =
+                                    { font' with
+                                        Weight = Some(Typst.Weight.OfInt weightValue) }
+
+                                return env, Some font''
+                            }
+
+                        return! tryNamedWeight () |> ResultExt.orElse tryIntWeight
+                    | "family" ->
+                        let! family = content |> Value.tryAsString
+                        let font'' = { font' with Family = Some family }
+                        return env, Some font''
+                    | _ -> return! Error $"Unknown field name `{fieldName}` in font."
+                | _ -> return! Error "Invalid statement."
+            }
+
         block
         |> Option.toResultWith "Expected block."
-        >>= Seq.fold
-            (fun acc statement ->
-                monad {
-                    let! env, font = acc
-
-                    match statement with
-                    | Gets(targetExpr, contentExpr) ->
-                        let! target = targetExpr |> tryEval env
-                        let! content = contentExpr |> tryEval env
-
-                        let font' =
-                            font
-                            |> Option.defaultValue
-                                { Color = None
-                                  Size = None
-                                  Weight = None
-                                  Family = None }
-
-                        let! fieldName = target |> Value.tryAsString
-
-                        match fieldName with
-                        | "color" ->
-                            let! r, g, b =
-                                content |> Value.tryAsTuple >>= (Seq.map Value.tryAsInt >> ResultExt.sequence)
-                                |>> Array.ofSeq
-                                >>= ArrayExt.tryAsTuple3 "Expected a tuple with 3 elements."
-
-                            let font'' =
-                                { font' with
-                                    Color = Some(Types.RGB(r, g, b)) }
-
-                            return env, Some font''
-                        | "size" ->
-                            let! size = content |> Value.tryAsFloatMeas "pt"
-
-                            let font'' =
-                                { font' with
-                                    Size = Some(size * 1.<Measure.pt>) }
-
-                            return env, Some font''
-                        | "weight" ->
-                            let tryNamedWeight () =
-                                monad {
-                                    let! name = content |> Value.tryAsString
-
-                                    let! weight =
-                                        name |> Typst.Weight.tryFrom |> Option.toResultWith "Invalid weight name."
-
-                                    let font'' = { font' with Weight = Some weight }
-
-                                    return env, Some font''
-                                }
-
-                            let tryIntWeight () =
-                                monad {
-                                    let! weightValue = content |> Value.tryAsInt
-
-                                    let font'' =
-                                        { font' with
-                                            Weight = Some(Typst.Weight.OfInt weightValue) }
-
-                                    return env, Some font''
-                                }
-
-                            return! tryNamedWeight () |> ResultExt.orElse tryIntWeight
-                        | "family" ->
-                            let! family = content |> Value.tryAsString
-                            let font'' = { font' with Family = Some family }
-                            return env, Some font''
-                        | _ -> return! Error $"Unknown field name `{fieldName}` in font."
-                    | _ -> return! Error "Invalid statement."
-                })
-            (Ok(env, fontState))
+        >>= Seq.fold runFontStatement (Ok(env, fontState))
 
     //
 
@@ -404,84 +431,90 @@ module Interpreter =
         { X: int<Measure.px> option
           Y: int<Measure.px> option }
 
-    let private runPos (block: Statement list option) (env: IEvalEnv, posState: PosState option) =
+    let private runPos (block: Statement list option) (env: EvalEnv, posState: PosState option) =
+        let runPosStatement
+            (acc: Result<EvalEnv * PosState option, string>)
+            (statement: Statement)
+            : Result<EvalEnv * PosState option, string> =
+            monad {
+                let! env, pos = acc
+
+                match statement with
+                | Gets(targetExpr, contentExpr) ->
+                    let! fieldName = targetExpr |> tryEval env >>= Value.tryAsString
+
+                    let pos' = pos |> Option.defaultValue { X = None; Y = None }
+
+                    match fieldName with
+                    | "x" ->
+                        let! x = contentExpr |> tryEval env >>= Value.tryAsFloatMeas "px"
+
+                        let pos'' =
+                            { pos' with
+                                X = Some(int x * 1<Measure.px>) }
+
+                        return env, Some pos''
+                    | "y" ->
+                        let! y = contentExpr |> tryEval env >>= Value.tryAsFloatMeas "px"
+
+                        let pos'' =
+                            { pos' with
+                                Y = Some(int y * 1<Measure.px>) }
+
+                        return env, Some pos''
+                    | _ -> return! Error $"Unknown field name `{fieldName}` in pos."
+                | _ -> return! Error "Invalid statement."
+            }
+
         block
         |> Option.toResultWith "Expected block."
-        >>= Seq.fold
-            (fun acc statement ->
-                monad {
-                    let! env, pos = acc
-
-                    match statement with
-                    | Gets(targetExpr, contentExpr) ->
-                        let! fieldName = targetExpr |> tryEval env >>= Value.tryAsString
-
-                        let pos' = pos |> Option.defaultValue { X = None; Y = None }
-
-                        match fieldName with
-                        | "x" ->
-                            let! x = contentExpr |> tryEval env >>= Value.tryAsFloatMeas "px"
-
-                            let pos'' =
-                                { pos' with
-                                    X = Some(int x * 1<Measure.px>) }
-
-                            return env, Some pos''
-                        | "y" ->
-                            let! y = contentExpr |> tryEval env >>= Value.tryAsFloatMeas "px"
-
-                            let pos'' =
-                                { pos' with
-                                    Y = Some(int y * 1<Measure.px>) }
-
-                            return env, Some pos''
-                        | _ -> return! Error $"Unknown field name `{fieldName}` in pos."
-                    | _ -> return! Error "Invalid statement."
-                })
-            (Ok(env, posState))
+        >>= Seq.fold runPosStatement (Ok(env, posState))
 
     type private SizeState =
         { Width: int<Measure.px> option
           Height: int<Measure.px> option }
 
-    let private runSize (block: Statement list option) (env: IEvalEnv, sizeState: SizeState option) =
+    let private runSize (block: Statement list option) (env: EvalEnv, sizeState: SizeState option) =
+        let runSizeStatement
+            (acc: Result<EvalEnv * SizeState option, string>)
+            (statement: Statement)
+            : Result<EvalEnv * SizeState option, string> =
+            monad {
+                let! env, size = acc
+
+                match statement with
+                | Gets(targetExpr, contentExpr) ->
+                    let! target = targetExpr |> tryEval env
+                    let! content = contentExpr |> tryEval env
+
+                    let size' = size |> Option.defaultValue { Width = None; Height = None }
+
+                    let! fieldName = target |> Value.tryAsString
+
+                    match fieldName with
+                    | "width" ->
+                        let! width = content |> Value.tryAsFloatMeas "px"
+
+                        let size'' =
+                            { size' with
+                                Width = Some(int width * 1<Measure.px>) }
+
+                        return env, Some size''
+                    | "height" ->
+                        let! height = content |> Value.tryAsFloatMeas "px"
+
+                        let size'' =
+                            { size' with
+                                Height = Some(int height * 1<Measure.px>) }
+
+                        return env, Some size''
+                    | _ -> return! Error $"Unknown field name `{fieldName}` in size."
+                | _ -> return! Error "Invalid statement."
+            }
+
         block
         |> Option.toResultWith "Expected block."
-        >>= (fun block' ->
-            (Ok(env, sizeState), block')
-            ||> Seq.fold (fun acc statement ->
-                monad {
-                    let! env, size = acc
-
-                    match statement with
-                    | Gets(targetExpr, contentExpr) ->
-                        let! target = targetExpr |> tryEval env
-                        let! content = contentExpr |> tryEval env
-
-                        let size' = size |> Option.defaultValue { Width = None; Height = None }
-
-                        let! fieldName = target |> Value.tryAsString
-
-                        match fieldName with
-                        | "width" ->
-                            let! width = content |> Value.tryAsFloatMeas "px"
-
-                            let size'' =
-                                { size' with
-                                    Width = Some(int width * 1<Measure.px>) }
-
-                            return env, Some size''
-                        | "height" ->
-                            let! height = content |> Value.tryAsFloatMeas "px"
-
-                            let size'' =
-                                { size' with
-                                    Height = Some(int height * 1<Measure.px>) }
-
-                            return env, Some size''
-                        | _ -> return! Error $"Unknown field name `{fieldName}` in size."
-                    | _ -> return! Error "Invalid statement."
-                }))
+        >>= Seq.fold runSizeStatement (Ok(env, sizeState))
 
     type private ResizeState =
         { Width: int<Measure.px> option
@@ -490,69 +523,101 @@ module Interpreter =
           ScaleX: float option
           ScaleY: float option }
 
-    let private runResize (block: Statement list option) (env: IEvalEnv, resizeState: ResizeState option) =
+        member this.TryToResize =
+            match this with
+            | { Scale = Some scale
+                ScaleX = None
+                ScaleY = None
+                Width = None
+                Height = None } -> Ok(Some(Types.Resize.Scale scale))
+            | { Scale = None
+                ScaleX = Some scaleX
+                ScaleY = Some scaleY
+                Width = None
+                Height = None } -> Ok(Some(Types.Resize.ScaleXY(scaleX, scaleY)))
+            | { Scale = None
+                ScaleX = None
+                ScaleY = None
+                Width = Some width
+                Height = Some height } -> Ok(Some(Types.Resize.Size(width, height)))
+            | { Scale = None
+                ScaleX = None
+                ScaleY = None
+                Width = Some width
+                Height = None } -> Ok(Some(Types.Resize.SizeX width))
+            | { Scale = None
+                ScaleX = None
+                ScaleY = None
+                Width = None
+                Height = Some height } -> Ok(Some(Types.Resize.SizeY height))
+            | _ -> Error "Fields of resize are not given correctly." // TODO
+
+    let private runResize (block: Statement list option) (env: EvalEnv, resizeState: ResizeState option) =
+        let runResizeStatement
+            (acc: Result<EvalEnv * ResizeState option, string>)
+            (statement: Statement)
+            : Result<EvalEnv * ResizeState option, string> =
+            monad {
+                let! env, resize = acc
+
+                match statement with
+                | Gets(targetExpr, contentExpr) ->
+                    let! target = targetExpr |> tryEval env
+                    let! content = contentExpr |> tryEval env
+
+                    let resize' =
+                        resize
+                        |> Option.defaultValue
+                            { Width = None
+                              Height = None
+                              Scale = None
+                              ScaleX = None
+                              ScaleY = None }
+
+                    let! fieldName = target |> Value.tryAsString
+
+                    match fieldName with
+                    | "width" ->
+                        let! width = content |> Value.tryAsFloatMeas "px"
+
+                        let resize'' =
+                            { resize' with
+                                Width = Some(int width * 1<Measure.px>) }
+
+                        return env, Some resize''
+                    | "height" ->
+                        let! height = content |> Value.tryAsFloatMeas "px"
+
+                        let resize'' =
+                            { resize' with
+                                Height = Some(int height * 1<Measure.px>) }
+
+                        return env, Some resize''
+                    | "scale" ->
+                        let! scale = content |> Value.tryAsFloat
+
+                        let resize'' = { resize' with Scale = Some scale }
+
+                        return env, Some resize''
+                    | "scale-x" ->
+                        let! scaleX = content |> Value.tryAsFloat
+
+                        let resize'' = { resize' with ScaleX = Some scaleX }
+
+                        return env, Some resize''
+                    | "scale-y" ->
+                        let! scaleY = content |> Value.tryAsFloat
+
+                        let resize'' = { resize' with ScaleY = Some(scaleY) }
+
+                        return env, Some resize''
+                    | _ -> return! Error $"Unknown field name `{fieldName}` in resize."
+                | _ -> return! Error "Invalid statement."
+            }
+
         block
         |> Option.toResultWith "Expected block."
-        >>= (fun block' ->
-            (Ok(env, resizeState), block')
-            ||> Seq.fold (fun acc statement ->
-                monad {
-                    let! env, resize = acc
-
-                    match statement with
-                    | Gets(targetExpr, contentExpr) ->
-                        let! target = targetExpr |> tryEval env
-                        let! content = contentExpr |> tryEval env
-
-                        let resize' =
-                            resize
-                            |> Option.defaultValue
-                                { Width = None
-                                  Height = None
-                                  Scale = None
-                                  ScaleX = None
-                                  ScaleY = None }
-
-                        let! fieldName = target |> Value.tryAsString
-
-                        match fieldName with
-                        | "width" ->
-                            let! width = content |> Value.tryAsFloatMeas "px"
-
-                            let resize'' =
-                                { resize' with
-                                    Width = Some(int width * 1<Measure.px>) }
-
-                            return env, Some resize''
-                        | "height" ->
-                            let! height = content |> Value.tryAsFloatMeas "px"
-
-                            let resize'' =
-                                { resize' with
-                                    Height = Some(int height * 1<Measure.px>) }
-
-                            return env, Some resize''
-                        | "scale" ->
-                            let! scale = content |> Value.tryAsFloat
-
-                            let resize'' = { resize' with Scale = Some scale }
-
-                            return env, Some resize''
-                        | "scale-x" ->
-                            let! scaleX = content |> Value.tryAsFloat
-
-                            let resize'' = { resize' with ScaleX = Some scaleX }
-
-                            return env, Some resize''
-                        | "scale-y" ->
-                            let! scaleY = content |> Value.tryAsFloat
-
-                            let resize'' = { resize' with ScaleY = Some(scaleY) }
-
-                            return env, Some resize''
-                        | _ -> return! Error $"Unknown field name `{fieldName}` in resize."
-                    | _ -> return! Error "Invalid statement."
-                }))
+        >>= Seq.fold runResizeStatement (Ok(env, resizeState))
 
     type private InitializeState =
         { Font: FontState option
@@ -564,15 +629,15 @@ module Interpreter =
         (movie: Frame.MovieBuilder)
         (args: Value array)
         (block: Statement list option)
-        (env: IEvalEnv, _state: Frame.MovieState)
-        : Result<IEvalEnv * Frame.MovieState, string> =
+        (env: EvalEnv, _state: Frame.MovieState)
+        : Result<EvalEnv * Frame.MovieState, string> =
         let initialState =
             { Font = None
               Pos = None
               Size = None
               Background = None }
 
-        let runInitializeStatement (acc: Result<IEvalEnv * InitializeState, string>) (statement: Statement) =
+        let runInitializeStatement (acc: Result<EvalEnv * InitializeState, string>) (statement: Statement) =
             monad {
                 let! env, config = acc
 
@@ -582,7 +647,6 @@ module Interpreter =
 
                     match target with
                     | "background" ->
-                        // TODO: 色指定にも対応する．
                         let! backgroundTypeValue, backgroundContentValue =
                             contentExpr
                             |> tryEval env
@@ -644,7 +708,7 @@ module Interpreter =
                 | _ -> return! Error "Invalid statement."
             }
 
-        let buildConfig (env: IEvalEnv, config: InitializeState) =
+        let buildConfig (env: EvalEnv, config: InitializeState) =
             monad {
                 let! font = config.Font |> Option.toResultWith "Font is not set."
                 let! pos = config.Pos |> Option.toResultWith "Pos is not set."
@@ -694,51 +758,54 @@ module Interpreter =
 
     let private runAddSpeakerAppearance
         (block: Statement list option)
-        (env: IEvalEnv, app: AddSpeakerAppearanceState option)
+        (env: EvalEnv, app: AddSpeakerAppearanceState option)
         =
+        let runAddSpeakerAppearanceStatement
+            (acc: Result<EvalEnv * AddSpeakerAppearanceState option, string>)
+            (statement: Statement)
+            : Result<EvalEnv * AddSpeakerAppearanceState option, string> =
+            monad {
+                let! env, app = acc
+
+                let app' =
+                    app
+                    |> Option.defaultValue
+                        { Path = None
+                          Pos = None
+                          Resize = None }
+
+                match statement with
+                | Do(expr, optBlock) ->
+                    let! fieldName = expr |> tryEval env >>= Value.tryAsString
+
+                    match fieldName with
+                    | "pos" ->
+                        let! env', pos' = runPos optBlock (env, app'.Pos)
+                        let app'' = { app' with Pos = pos' }
+                        return env', Some app''
+                    | "resize" ->
+                        let! env', resize' = runResize optBlock (env, app'.Resize)
+                        let app'' = { app' with Resize = resize' }
+                        return env', Some app''
+                    | _ -> return! Error $"Unknown field name `{fieldName}` in appearance."
+                | Gets(targetExpr, contentExpr) ->
+                    let! fieldName = targetExpr |> tryEval env >>= Value.tryAsString
+                    let! content = contentExpr |> tryEval env
+
+                    match fieldName with
+                    | "path" ->
+                        let! path = content |> Value.tryAsString
+
+                        let app'' = { app' with Path = Some path }
+
+                        return env, Some app''
+                    | _ -> return! Error $"Unknown field name `{fieldName}` in appearance."
+                | _ -> return! Error "Invalid statement."
+            }
+
         block
         |> Option.toResultWith "Expected block."
-        >>= Seq.fold
-            (fun acc statement ->
-                monad {
-                    let! env, app = acc
-
-                    let app' =
-                        app
-                        |> Option.defaultValue
-                            { Path = None
-                              Pos = None
-                              Resize = None }
-
-                    match statement with
-                    | Do(expr, optBlock) ->
-                        let! fieldName = expr |> tryEval env >>= Value.tryAsString
-
-                        match fieldName with
-                        | "pos" ->
-                            let! env', pos' = runPos optBlock (env, app'.Pos)
-                            let app'' = { app' with Pos = pos' }
-                            return env', Some app''
-                        | "resize" ->
-                            let! env', resize' = runResize optBlock (env, app'.Resize)
-                            let app'' = { app' with Resize = resize' }
-                            return env', Some app''
-                        | _ -> return! Error $"Unknown field name `{fieldName}` in appearance."
-                    | Gets(targetExpr, contentExpr) ->
-                        let! fieldName = targetExpr |> tryEval env >>= Value.tryAsString
-                        let! content = contentExpr |> tryEval env
-
-                        match fieldName with
-                        | "path" ->
-                            let! path = content |> Value.tryAsString
-
-                            let app'' = { app' with Path = Some path }
-
-                            return env, Some app''
-                        | _ -> return! Error $"Unknown field name `{fieldName}` in appearance."
-                    | _ -> return! Error "Invalid statement."
-                })
-            (Ok(env, app))
+        >>= Seq.fold runAddSpeakerAppearanceStatement (Ok(env, app))
 
     type private AddSpeakerState =
         { Name: string option
@@ -750,15 +817,15 @@ module Interpreter =
         (movie: Frame.MovieBuilder)
         (args: Value array)
         (block: Statement list option)
-        (env: IEvalEnv, state: Frame.MovieState)
-        : Result<IEvalEnv * Frame.MovieState, string> =
+        (env: EvalEnv, state: Frame.MovieState)
+        : Result<EvalEnv * Frame.MovieState, string> =
         let initialState =
             { Name = None
               Style = None
               Font = None
               Appearance = None }
 
-        let runAddSpeakerStatement (acc: Result<IEvalEnv * AddSpeakerState, string>) (statement: Statement) =
+        let runAddSpeakerStatement (acc: Result<EvalEnv * AddSpeakerState, string>) (statement: Statement) =
             monad {
                 let! env, config = acc
 
@@ -794,7 +861,7 @@ module Interpreter =
                 | _ -> return! Error "Invalid statement."
             }
 
-        let buildConfig speakerName (env: IEvalEnv, config: AddSpeakerState) =
+        let buildConfig speakerName (env: EvalEnv, config: AddSpeakerState) =
             monad {
                 let! name = config.Name |> Option.toResultWith "Name is not set."
                 let! style = config.Style |> Option.toResultWith "Style is not set."
@@ -819,34 +886,7 @@ module Interpreter =
                     appearanceResize
                     |> function
                         | None -> Ok None
-                        | Some resize ->
-                            match resize with
-                            | { Scale = Some scale
-                                ScaleX = None
-                                ScaleY = None
-                                Width = None
-                                Height = None } -> Ok(Some(Types.Resize.Scale scale))
-                            | { Scale = None
-                                ScaleX = Some scaleX
-                                ScaleY = Some scaleY
-                                Width = None
-                                Height = None } -> Ok(Some(Types.Resize.ScaleXY(scaleX, scaleY)))
-                            | { Scale = None
-                                ScaleX = None
-                                ScaleY = None
-                                Width = Some width
-                                Height = Some height } -> Ok(Some(Types.Resize.Size(width, height)))
-                            | { Scale = None
-                                ScaleX = None
-                                ScaleY = None
-                                Width = Some width
-                                Height = None } -> Ok(Some(Types.Resize.SizeX width))
-                            | { Scale = None
-                                ScaleX = None
-                                ScaleY = None
-                                Width = None
-                                Height = Some height } -> Ok(Some(Types.Resize.SizeY height))
-                            | _ -> Error "Fields of resize are not given correctly." // TODO
+                        | Some resize -> resize.TryToResize
 
                 let config' =
                     { Frame.SpeakerState.Name = name
@@ -864,6 +904,7 @@ module Interpreter =
                           Resize = resize' } }
 
                 let state' = movie.AddSpeaker(state, speakerName, config')
+
                 return env, state'
             }
 
@@ -880,8 +921,8 @@ module Interpreter =
         (movie: Frame.MovieBuilder)
         (args: Value array)
         (block: Statement list option)
-        (env: IEvalEnv, state: Frame.MovieState)
-        : Result<IEvalEnv * Frame.MovieState, string> =
+        (env: EvalEnv, state: Frame.MovieState)
+        : Result<EvalEnv * Frame.MovieState, string> =
         let operators =
             [ InnerOperator.on,
               fun (args: Value array) (block: Statement list option) ->
@@ -908,40 +949,44 @@ module Interpreter =
                   } ]
             |> Map.ofSeq
 
+        let runAppearanceStatement
+            (acc: Result<EvalEnv * (Frame.SpeakerState -> Frame.SpeakerState), string>)
+            (statement: Statement)
+            : Result<EvalEnv * (Frame.SpeakerState -> Frame.SpeakerState), string> =
+            match statement with
+            | Do(expr, block) ->
+                monad {
+                    let! env, f = acc
+
+                    if block <> None then
+                        do! Error "Expected no block."
+
+                    let! s, args = expr |> tryEval env >>= Value.tryAsInnerOperatorApplied
+
+                    let! op = operators.TryFind s |> Option.toResultWith "Unknown inner operator."
+                    let! env', f' = op args block
+                    return env', f >> f'
+                }
+            | _ -> Error "Invalid statement."
+
         monad {
             do! args |> ArrayExt.tryAsEmpty "Expected no arguments."
 
             let! block' = block |> Option.toResultWith "Expected block."
 
-            return!
-                (Ok(env, id), block')
-                ||> Seq.fold (fun acc statement ->
-                    match statement with
-                    | Do(expr, block) ->
-                        monad {
-                            let! env, f = acc
-
-                            if block <> None then
-                                do! Error "Expected no block."
-
-                            let! s, args = expr |> tryEval env >>= Value.tryAsInnerOperatorApplied
-
-                            let! op = operators.TryFind s |> Option.toResultWith "Unknown inner operator."
-                            let! env', f' = op args block
-                            return env', f >> f'
-                        }
-                    | _ -> Error "Invalid statement.")
-                |>> (fun (env, modify) ->
-                    let state' = movie.ModifySpeaker(state, modify)
-                    env, state')
+            return block'
         }
+        >>= Seq.fold runAppearanceStatement (Ok(env, id))
+        |>> (fun (env, modify) ->
+            let state' = movie.ModifySpeaker(state, modify)
+            env, state')
 
     let runSetStyle
         (movie: Frame.MovieBuilder)
         (args: Value array)
         (block: Statement list option)
-        (env: IEvalEnv, state: Frame.MovieState)
-        : Result<IEvalEnv * Frame.MovieState, string> =
+        (env: EvalEnv, state: Frame.MovieState)
+        : Result<EvalEnv * Frame.MovieState, string> =
         monad {
             let! style = args |> ArrayExt.tryAsSingleton "Expected no arguments." >>= Value.tryAsString
 
@@ -953,20 +998,137 @@ module Interpreter =
             return env, state'
         }
 
+    type private AddImageState =
+        { Path: string option
+          Pos: PosState option
+          Resize: ResizeState option
+          BindsTo: string option }
+
+    let runAddImage
+        (movie: Frame.MovieBuilder)
+        (args: Value array)
+        (block: Statement list option)
+        (env: EvalEnv, state: Frame.MovieState)
+        : Result<EvalEnv * Frame.MovieState, string> =
+        let runAddImageStatement (acc: Result<EvalEnv * AddImageState, string>) (statement: Statement) =
+            monad {
+                let! env, config = acc
+
+                match statement with
+                | Gets(targetExpr, contentExpr) ->
+                    let! fieldName = targetExpr |> tryEval env >>= Value.tryAsString
+                    let! content = contentExpr |> tryEval env
+
+                    match fieldName with
+                    | "path" ->
+                        let! path = content |> Value.tryAsString
+
+                        let config': AddImageState = { config with Path = Some path }
+
+                        return env, config'
+                    | _ -> return! Error $"Unknown field name `{fieldName}` in add-image."
+                | Do(expr, optBlock) ->
+                    let! fieldName = expr |> tryEval env >>= Value.tryAsString
+
+                    match fieldName with
+                    | "pos" ->
+                        let! env', pos' = runPos optBlock (env, config.Pos)
+                        let config' = { config with Pos = pos' }
+                        return env', config'
+                    | "resize" ->
+                        let! env', resize' = runResize optBlock (env, config.Resize)
+                        let config' = { config with Resize = resize' }
+                        return env', config'
+                    | _ -> return! Error $"Unknown field name `{fieldName}` in add-image."
+                | BindsTo(targetExpr, pattern) ->
+                    if targetExpr.IsSome then
+                        do! Error "Expected no target."
+
+                    let pattern' =
+                        match pattern with
+                        | Pattern.Variable name -> name
+
+                    let config' = { config with BindsTo = Some pattern' }
+
+                    return env, config'
+                | _ -> return! Error "Invalid statement."
+            }
+
+        monad {
+            do! args |> ArrayExt.tryAsEmpty "Expected no arguments."
+
+            let! block' = block |> Option.toResultWith "Expected block."
+
+            let initialState =
+                { Path = None
+                  Pos = None
+                  Resize = None
+                  BindsTo = None }
+
+            let! env', config = (Ok(env, initialState), block') ||> Seq.fold runAddImageStatement
+
+            let! path = config.Path |> Option.toResultWith "Path is not set."
+
+            let! pos = config.Pos |> Option.toResultWith "Pos is not set."
+
+            let! posX = pos.X |> Option.toResultWith "Pos X is not set."
+            let! posY = pos.Y |> Option.toResultWith "Pos Y is not set."
+
+            let resize = config.Resize
+
+            let! resize' =
+                resize
+                |> function
+                    | None -> Ok None
+                    | Some resize -> resize.TryToResize
+
+            let! varName = config.BindsTo |> Option.toResultWith "Expected binding."
+
+            let assetId = System.Guid.NewGuid().ToString("N")
+
+            let state' = movie.AddImage(state, assetId, path, { X = posX; Y = posY }, resize')
+
+            let env'' =
+                env'.WithVariable(varName, Value.AssetRef { Type = AssetType.Image; Id = assetId })
+
+            return env'', state'
+        }
+
+    let runRemove
+        (movie: Frame.MovieBuilder)
+        (args: Value array)
+        (block: Statement list option)
+        (env: EvalEnv, state: Frame.MovieState)
+        : Result<EvalEnv * Frame.MovieState, string> =
+        monad {
+            let! assetRef = args |> ArrayExt.tryAsSingleton "Expected one argument." >>= Value.tryAsAssetRef
+
+            if block.IsSome then
+                do! Error "Expected no block."
+
+            match assetRef.Type with
+            | AssetType.Image ->
+                let state' = movie.RemoveImage(state, assetRef.Id)
+                return env, state'
+            | _ -> return failwith "Not implemented yet." // TODO
+        }
+
     //
 
     let private statementOperators =
         [ InnerOperator.initialize, runInitialize
           InnerOperator.addSpeaker, runAddSpeaker
           InnerOperator.appearance, runAppearance
-          InnerOperator.setStyle, runSetStyle ]
+          InnerOperator.setStyle, runSetStyle
+          InnerOperator.addImage, runAddImage
+          InnerOperator.remove, runRemove ]
         |> Map.ofSeq
 
     let rec runStatement
         (movie: Frame.MovieBuilder)
         (statement: Statement)
-        (env: IEvalEnv, state: Frame.MovieState)
-        : Result<IEvalEnv * Frame.MovieState, string> =
+        (env: EvalEnv, state: Frame.MovieState)
+        : Result<EvalEnv * Frame.MovieState, string> =
 
         match statement with
         | Do(expr, block) ->
@@ -997,10 +1159,10 @@ module Interpreter =
 
     //
 
-    let run (movie: Frame.MovieBuilder) (ast: AST) (env: IEvalEnv, state: Frame.MovieState) =
+    let run (movie: Frame.MovieBuilder) (ast: AST) (env: EvalEnv, state: Frame.MovieState) =
         (Ok(env, state), ast.Statements)
         ||> Seq.fold (fun acc statement -> acc >>= runStatement movie statement)
 
-    let build (movie: Frame.MovieBuilder) (env: IEvalEnv) (ast: AST) =
+    let build (movie: Frame.MovieBuilder) (env: EvalEnv) (ast: AST) =
         let state = Frame.MovieState.empty
         run movie ast (env, state) |> Result.map snd

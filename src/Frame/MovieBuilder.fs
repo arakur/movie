@@ -86,6 +86,15 @@ type SubtitleState =
           Pos = this.Pos
           Size = this.Size }
 
+type ImageAsset =
+    { Path: string
+      Pos: Pos
+      Resize: Resize option
+      StartFrame: int
+      EndFrame: int option }
+
+type Assets = { Images: Map<string, ImageAsset> }
+
 [<RequireQualifiedAccess>]
 type Background =
     | Image of fileName: string
@@ -103,6 +112,7 @@ type MovieState =
       Speakers: Map<Name, SpeakerState>
       CurrentSpeaker: Name option
       Subtitle: SubtitleState
+      Assets: Assets
       Background: Background }
 
     static member empty =
@@ -117,6 +127,7 @@ type MovieState =
                   Family = "" }
               Pos = { X = 0<px>; Y = 0<px> }
               Size = { Width = 0<px>; Height = 0<px> } }
+          Assets = { Images = Map.empty }
           Background = Background.RGB(0, 0, 0) }
 
 type Initialize =
@@ -138,6 +149,7 @@ type MovieBuilder() =
             { Font = initialize.Font
               Pos = initialize.Pos
               Size = initialize.Size }
+          Assets = { Images = Map.empty }
           Background = initialize.Background }
 
     [<CustomOperation "addSpeaker">]
@@ -159,6 +171,39 @@ type MovieBuilder() =
 
         { s with
             Speakers = s.Speakers.Add(currentSpeaker, speaker') }
+
+    [<CustomOperation "addImage">]
+    member __.AddImage(s: MovieState, id: string, path: string, pos: Pos, resize: Resize option) =
+        let asset =
+            { Path = path
+              Pos = pos
+              Resize = resize
+              StartFrame = s.Frames.Length
+              EndFrame = None }
+
+        let assets = s.Assets
+
+        let assets' =
+            { assets with
+                Images = assets.Images.Add(id, asset) }
+
+        { s with Assets = assets' }
+
+    [<CustomOperation "removeImage">]
+    member __.RemoveImage(s: MovieState, id: string) =
+        let assets = s.Assets
+
+        let image = assets.Images.[id]
+
+        let imageEnded =
+            { image with
+                EndFrame = Some s.Frames.Length }
+
+        let assets' =
+            { assets with
+                Images = assets.Images.Add(id, imageEnded) }
+
+        { s with Assets = assets' }
 
     [<CustomOperation "modify">]
     member __.ModifySpeaker(s: MovieState, name: Name, f: SpeakerState -> SpeakerState) =

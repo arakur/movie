@@ -10,6 +10,7 @@ type LineNode =
     | String of string
     | Word of string
     | Gets
+    | BindsTo
     | At
     | Comma
     | OtherOperator of string
@@ -136,6 +137,8 @@ let private linesFrom (source: string) : Node seq =
 
     let gets: Parser<LineNode, unit> = pstring "<-" >>% LineNode.Gets
 
+    let bindsTo: Parser<LineNode, unit> = pstring "=>" >>% LineNode.BindsTo
+
     let at: Parser<LineNode, unit> = pstring "@" >>% LineNode.At
 
     let comma: Parser<LineNode, unit> = pchar ',' >>% LineNode.Comma
@@ -157,6 +160,7 @@ let private linesFrom (source: string) : Node seq =
               parseString
               parseWord
               gets
+              bindsTo
               comma
               openParen
               closeParen
