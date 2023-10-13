@@ -86,15 +86,6 @@ type SubtitleState =
           Pos = this.Pos
           Size = this.Size }
 
-type ImageAsset =
-    { Path: string
-      Pos: Pos
-      Resize: Resize option
-      StartFrame: int
-      EndFrame: int option }
-
-type Assets = { Images: Map<string, ImageAsset> }
-
 [<RequireQualifiedAccess>]
 type Background =
     | Image of fileName: string
@@ -250,4 +241,4 @@ module MovieBuilder =
     let compose (env: Env.Env) (state: MovieState) (output: Path) =
         let frameOutputs = FrameOutput.framesToOutput env (state.Frames |> Seq.toList)
 
-        FrameOutput.exportVideo env.FFmpeg state.Background.ToFFmpegBackgroundInput frameOutputs output
+        FrameOutput.exportVideo env.FFmpeg state.Background.ToFFmpegBackgroundInput frameOutputs state.Assets output

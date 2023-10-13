@@ -7,6 +7,7 @@ open FFmpeg
 open FFmpeg.FFmpegBuilder
 
 open NAudio
+open Appearance
 
 type AppearanceArrangement =
     { Path: Path
@@ -133,6 +134,7 @@ type FrameOutput =
         (ffmpeg: FFmpeg)
         (background: Background)
         (frameOutputs: FrameOutput list)
+        (assets: Assets)
         (output: Path)
         =
         let arguments =
@@ -146,12 +148,14 @@ type FrameOutput =
                     )
                     |>> List.map InputNode.aInput
 
-                let frameDurations =
+                let frameSlits =
                     frameOutputs
                     |> Seq.map (fun frame -> frame.Length)
                     |> Seq.scan (+) 0.0
-                    |> Seq.windowed 2
-                    |> Seq.map (fun window -> window[0], window[1])
+                    |> Array.ofSeq
+
+                let frameDurations =
+                    frameSlits |> Seq.windowed 2 |> Seq.map (fun window -> window[0], window[1])
 
                 let wholeLength = frameOutputs |> List.map (fun frame -> frame.Length) |> Seq.sum
 
@@ -178,39 +182,80 @@ type FrameOutput =
                             return color, None
                     }
 
+                // let mutable layers = []
+
+                let! frameLayersList =
+                    builder { return [] }
+                    |> Seq.foldBack
+                        (fun (frame, duration) layers ->
+                            builder {
+                                let! layers = layers
+
+                                let! apps =
+                                    inputNodeN (
+                                        frame.Arrangements |> List.map (fun app -> { Path = app.Path; Arguments = [] })
+                                    )
+                                    |>> List.map InputNode.vInput
+
+                                let resizes = frame.Arrangements |> List.map (fun app -> app.Resize)
+
+                                let appLayers =
+                                    (frame.Arrangements, resizes)
+                                    ||> List.mapi2 (fun i arr resize ->
+                                        { Pos = arr.Pos
+                                          Resize = resize
+                                          Duration = Some duration
+                                          Input = apps.[i]
+                                          Shortest = false })
+
+                                let! subtitle =
+                                    inputNode
+                                        { Path = frame.SubtitleFile
+                                          Arguments = [] }
+
+                                let subtitleLayer =
+                                    { Pos = frame.Pos
+                                      Resize = None
+                                      Duration = Some duration
+                                      Input = subtitle.VInput
+                                      Shortest = false }
+
+                                return (subtitleLayer :: appLayers) :: layers
+                            })
+                        (Seq.zip frameOutputs frameDurations)
+                    |> Seq.foldBack
+                        (fun (imageAsset: ImageAsset) layers ->
+                            builder {
+                                let! layers = layers
+
+                                let! image =
+                                    inputNode
+                                        { Path = imageAsset.Path
+                                          Arguments = [] }
+
+                                let duration =
+                                    frameSlits.[imageAsset.StartFrame],
+                                    imageAsset.EndFrame
+                                    |> Option.map (fun endFrame -> frameSlits.[endFrame])
+                                    |> Option.defaultValue wholeLength
+
+                                let imageLayer =
+                                    { Pos = imageAsset.Pos
+                                      Resize = imageAsset.Resize
+                                      Duration = Some duration
+                                      Input = image.VInput
+                                      Shortest = false }
+
+                                return [ imageLayer ] :: layers
+                            })
+                        assets.Images.Values
+                    |>> Seq.toList
+
                 let mutable prevV = backgroundNodeV
 
-                for frame, duration in Seq.zip frameOutputs frameDurations do
+                for layers in frameLayersList do
                     let! currentV = innerNode
-
-                    let! apps =
-                        inputNodeN (frame.Arrangements |> List.map (fun app -> { Path = app.Path; Arguments = [] }))
-                        |>> List.map InputNode.vInput
-
-                    let resizes = frame.Arrangements |> List.map (fun app -> app.Resize)
-
-                    let layers =
-                        (frame.Arrangements, resizes)
-                        ||> List.mapi2 (fun i arr resize ->
-                            { Pos = arr.Pos
-                              Resize = resize
-                              Duration = Some duration
-                              Input = apps.[i]
-                              Shortest = false })
-
-                    let! subtitle =
-                        inputNode
-                            { Path = frame.SubtitleFile
-                              Arguments = [] }
-
-                    let subtitleLayer =
-                        { Pos = frame.Pos
-                          Resize = None
-                          Duration = Some duration
-                          Input = subtitle.VInput
-                          Shortest = false }
-
-                    do! overlay (layers @ [ subtitleLayer ]) prevV currentV
+                    do! overlay layers prevV currentV
                     prevV <- currentV
 
                 let! voiceConcatA = innerNode

@@ -35,48 +35,30 @@ let render path env =
 
         let log = p.StandardError.ReadToEnd()
 
-        // printfn "%s" log
+        printfn "%s" log
 
         printfn "Done."
 
 do
-    // DEBUG
+    printfn "Ready for rendering..."
 
-    let path = "script/script.txt"
+    use env = new Env("tmp")
 
-    let script = path |> System.IO.File.ReadAllText
+    let mutable loop = true
 
-    let ast = script |> AST.parse
+    printfn "`render` to render, `exit` to exit."
 
-    let result =
-        try
-            ast >>= Interpreter.build movie evalEnv
-        with msg ->
-            Error $"Error: {msg}"
+    while loop do
+        printf "command: "
+        let input = System.Console.ReadLine()
 
-    match result with
-    | Error msg -> printfn "Error: %s" msg
-    | Ok movieState -> printfn "Ok: \n%A" movieState.Assets
+        let segments = input |> String.split [ " " ] |> Seq.toList
 
-// printfn "Ready for rendering..."
-
-// use env = new Env("tmp")
-
-// let mutable loop = true
-
-// printfn "`render` to render, `exit` to exit."
-
-// while loop do
-//     printf "command: "
-//     let input = System.Console.ReadLine()
-
-//     let segments = input |> String.split [ " " ] |> Seq.toList
-
-//     match segments with
-//     | [ "exit" ] -> loop <- false
-//     | [ "render"; path ] ->
-//         if System.IO.File.Exists(path) then
-//             render path env
-//         else
-//             printfn $"File not found: {path}"
-//     | _ -> printfn "Unknown command."
+        match segments with
+        | [ "exit" ] -> loop <- false
+        | [ "render"; path ] ->
+            if System.IO.File.Exists(path) then
+                render path env
+            else
+                printfn $"File not found: {path}"
+        | _ -> printfn "Unknown command."

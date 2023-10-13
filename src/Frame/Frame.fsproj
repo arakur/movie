@@ -5,6 +5,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Frame.fs" />
+    <Compile Include="Assets.fs" />
     <Compile Include="FrameOutput.fs" />
     <Compile Include="MovieBuilder.fs" />
   </ItemGroup>
