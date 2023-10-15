@@ -370,6 +370,21 @@ module Interpreter =
                       Weight = weight }
             }
 
+
+        static member tryComposeUpdate(this: FontState) : Result<Frame.SubtitleFontUpdate, string> =
+            monad {
+                let color = this.Color
+                let family = this.Family |> RevList.toList
+                let size = this.Size
+                let weight = this.Weight
+
+                return
+                    { Color = color
+                      Family = family
+                      Size = size
+                      Weight = weight }
+            }
+
     let private runFont (block: Statement list option) (env: EvalEnv, fontState: FontState option) =
         let runFontStatement
             (acc: Result<EvalEnv * FontState option, string>)
@@ -906,7 +921,7 @@ module Interpreter =
                 let! font =
                     this.Font
                     |> Option.toResultWith "Font is not set."
-                    |> Result.bind FontState.tryCompose
+                    |> Result.bind FontState.tryComposeUpdate
 
                 let! appearance =
                     this.Appearance

@@ -10,7 +10,7 @@ type Name = string
 type SpeakerState =
     { Name: Name
       Style: string
-      Font: SubtitleFont
+      Font: SubtitleFontUpdate
       Appearance: FrameAppearance }
 
     member this.WithTalk(talk: string) : Voicevox.Speech =
@@ -52,12 +52,12 @@ type SubtitleState =
       Pos: Pos
       Size: Size }
 
-    member this.WithText(text: string, subtitleFont: SubtitleFont) =
-        let fontUpdated =
-            { Color = subtitleFont.Color |> Option.orElse this.Font.Color
-              Size = subtitleFont.Size |> Option.orElse this.Font.Size
-              Weight = subtitleFont.Weight |> Option.orElse this.Font.Weight
-              Family = subtitleFont.Family |> List.append this.Font.Family }
+    member this.WithText(text: string, update: SubtitleFontUpdate) =
+        let fontUpdated: SubtitleFont =
+            { Color = update.Color |> Option.orElse this.Font.Color
+              Size = update.Size |> Option.orElse this.Font.Size
+              Weight = update.Weight |> Option.orElse this.Font.Weight
+              Family = update.Family |> List.append this.Font.Family }
 
         { Text = text
           Font = fontUpdated
