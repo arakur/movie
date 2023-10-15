@@ -53,8 +53,14 @@ type SubtitleState =
       Size: Size }
 
     member this.WithText(text: string, subtitleFont: SubtitleFont) =
+        let fontUpdated =
+            { Color = subtitleFont.Color |> Option.orElse this.Font.Color
+              Size = subtitleFont.Size |> Option.orElse this.Font.Size
+              Weight = subtitleFont.Weight |> Option.orElse this.Font.Weight
+              Family = subtitleFont.Family |> List.append this.Font.Family }
+
         { Text = text
-          Font = subtitleFont
+          Font = fontUpdated
           Pos = this.Pos
           Size = this.Size }
 

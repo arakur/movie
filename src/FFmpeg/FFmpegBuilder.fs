@@ -265,6 +265,7 @@ module FFmpegBuilder =
         }
 
     let rec overlay (layers: Layer list) (background: Node) (output: Node) =
+
         match layers with
         | [] -> nullFilter background output
         | layer :: [] -> overlay2 layer background output

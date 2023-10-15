@@ -797,6 +797,7 @@ module Interpreter =
                 let! config' = config |> InitializeState.tryCompose
 
                 let state' = movie.Initialize((), config')
+
                 return env, state'
             }
 
@@ -804,6 +805,7 @@ module Interpreter =
             do! args |> ArrayExt.tryAsEmpty "Expected no arguments."
             let! block' = block |> Option.toResultWith "Expected block."
             let! config = (Ok(env, initialState), block') ||> Seq.fold runInitializeStatement
+
             return! buildConfig config
         }
 
@@ -1217,8 +1219,8 @@ module Interpreter =
 
     let run (movie: Frame.MovieBuilder) (ast: AST) (env: EvalEnv, state: Frame.MovieState) =
         let rec runStatement
-            (statement: Statement)
             (acc: Result<EvalEnv * Frame.MovieState, string>)
+            (statement: Statement)
             : Result<EvalEnv * Frame.MovieState, string> =
             monad {
                 let! env, state = acc
@@ -1237,7 +1239,7 @@ module Interpreter =
                     | None -> return env, state'
                     | Some block ->
                         // TODO: ローカルステートメントを記述出来るようにする．
-                        return! (block, Ok(env, state')) ||> Seq.foldBack runStatement
+                        return! (Ok(env, state'), block) ||> Seq.fold runStatement
                 | Gets(_, _) -> return! Error "Assignment is not allowed at the top level."
                 | BindsTo(_, _) -> return! Error "Binding is not allowed at the top level."
                 | Talk talk ->
@@ -1245,7 +1247,7 @@ module Interpreter =
                     return env, movie.YieldFrame(state, talk.Subtitle, speech')
             }
 
-        (ast.Statements, Ok(env, state)) ||> Seq.foldBack runStatement
+        (Ok(env, state), ast.Statements) ||> Seq.fold runStatement
 
     let build (movie: Frame.MovieBuilder) (env: EvalEnv) (ast: AST) =
         let state = Frame.MovieState.empty

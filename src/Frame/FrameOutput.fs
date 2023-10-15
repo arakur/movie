@@ -185,8 +185,6 @@ type FrameOutput =
                             return color, None
                     }
 
-                // let mutable layers = []
-
                 let! frameLayersList =
                     builder { return [] }
                     |> Seq.foldBack
@@ -254,18 +252,21 @@ type FrameOutput =
                         assets.Images.Values
                     |>> Seq.toList
 
-                let mutable prevV = backgroundNodeV
-
-                for layers in frameLayersList do
-                    let! currentV = innerNode
-                    do! overlay layers prevV currentV
-                    prevV <- currentV
+                let! outputV =
+                    frameLayersList
+                    |> Seq.fold
+                        (fun prevV layers ->
+                            builder {
+                                let! prevV = prevV
+                                let! currentV = innerNode
+                                do! overlay layers prevV currentV
+                                return currentV
+                            })
+                        (builder { return backgroundNodeV })
 
                 let! voiceConcatA = innerNode
 
                 do! concatA voices voiceConcatA
-
-                let outputV = prevV
 
                 let! outputA =
                     builder {
