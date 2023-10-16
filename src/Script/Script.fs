@@ -1326,14 +1326,14 @@ module Interpreter =
             let { Start = trimStart; End = trimEnd } =
                 config.Trim |> Option.defaultValue { Start = None; End = None }
 
-            let! varName = config.BindsTo |> Option.toResultWith "Expected binding."
-
             let assetId = System.Guid.NewGuid().ToString("N")
 
             let state' = movie.AddVideo(state, assetId, path, pos, resize, trimStart, trimEnd)
 
             let env'' =
-                env'.WithVariable(varName, Value.AssetRef { Type = AssetType.Image; Id = assetId })
+                match config.BindsTo with
+                | None -> env'
+                | Some varName -> env'.WithVariable(varName, Value.AssetRef { Type = AssetType.Image; Id = assetId })
 
             return env'', state'
         }
@@ -1406,14 +1406,14 @@ module Interpreter =
             let { Start = trimStart; End = trimEnd } =
                 config.Trim |> Option.defaultValue { Start = None; End = None }
 
-            let! varName = config.BindsTo |> Option.toResultWith "Expected binding."
-
             let assetId = System.Guid.NewGuid().ToString("N")
 
             let state' = movie.AddAudio(state, assetId, path, trimStart, trimEnd)
 
             let env'' =
-                env'.WithVariable(varName, Value.AssetRef { Type = AssetType.Image; Id = assetId })
+                match config.BindsTo with
+                | None -> env'
+                | Some varName -> env'.WithVariable(varName, Value.AssetRef { Type = AssetType.Image; Id = assetId })
 
             return env'', state'
         }
