@@ -191,7 +191,28 @@ type FrameOutput =
                 (fun acc asset ->
                     builder {
                         let! acc = acc
-                        let! input = inputNode { Path = asset.Path; Arguments = [] }
+
+                        let arguments =
+                            seq {
+                                let trimStart, trimEnd = asset.Trim
+
+                                if trimStart.IsSome then
+                                    let start = trimStart.Value
+                                    let offset = -start
+                                    yield Arg.KV("ss", start |> string)
+                                    yield Arg.KV("itsoffset", offset |> string)
+
+                                if trimEnd.IsSome then
+                                    let duration = trimEnd.Value - (trimStart |> Option.defaultValue 0.0<sec>)
+                                    yield Arg.KV("t", duration |> string)
+                            }
+                            |> Seq.toList
+
+                        let! input =
+                            inputNode
+                                { Path = asset.Path
+                                  Arguments = arguments }
+
                         return (asset, input) :: acc
                     })
                 ([] |> builder.Return)
@@ -251,13 +272,6 @@ type FrameOutput =
 
                     return [ imageLayer ] :: layers
                 | Asset.Video asset ->
-                    let! trimmed = innerNode
-                    let start, end_ = asset.Trim
-
-                    let start', end' =
-                        start |> Option.defaultValue 0.0<sec>, end_ |> Option.defaultValue wholeLength
-
-                    do! trim (start', end') assetInput.VInput trimmed
 
                     let duration =
                         frameSlits.[asset.StartFrame],
@@ -269,7 +283,7 @@ type FrameOutput =
                         { Pos = asset.Pos
                           Resize = asset.Resize
                           Duration = Some duration
-                          Input = trimmed
+                          Input = assetInput.VInput
                           Shortest = false }
 
                     return [ videoLayer ] :: layers
@@ -291,32 +305,14 @@ type FrameOutput =
                 return voiceConcatA
             }
 
-        let collectAssetAudios (asset, assetInput) audios =
+        let collectAssetAudios audios (asset, assetInput) =
             builder {
                 let! audios = audios
 
                 match asset with
                 | Asset.Image _ -> return audios
-                | Asset.Video asset ->
-                    let! trimmed = innerNode
-                    let start, end_ = asset.Trim
-
-                    let start', end' =
-                        start |> Option.defaultValue 0.0<sec>, end_ |> Option.defaultValue wholeLength
-
-                    do! atrim (start', end') assetInput.AInput trimmed
-
-                    return trimmed :: audios
-                | Asset.Audio asset ->
-                    let! trimmed = innerNode
-                    let start, end_ = asset.Trim
-
-                    let start', end' =
-                        start |> Option.defaultValue 0.0<sec>, end_ |> Option.defaultValue wholeLength
-
-                    do! atrim (start', end') assetInput.AInput trimmed
-
-                    return trimmed :: audios
+                | Asset.Video _
+                | Asset.Audio _ -> return assetInput.AInput :: audios
             }
 
         let outputV backgroundNodeV assets' =
@@ -341,10 +337,26 @@ type FrameOutput =
                     | Some backgroundA -> [ voiceConcatA; backgroundA ]
                     | None -> [ voiceConcatA ]
 
-                let! audios = voiceBg |> builder.Return |> Seq.foldBack collectAssetAudios assets'
+                let! audios = Seq.fold collectAssetAudios (voiceBg |> builder.Return) assets' |>> List.rev
+
+                let! audiosDelayed = innerNodeN audios.Length
+
+                do!
+                    Seq.zip3 assets' audios audiosDelayed
+                    |> Seq.fold
+                        (fun acc ((asset, _), audio, delayed) ->
+                            builder {
+                                let delay =
+                                    frameSlits.[asset.StartFrame]
+                                    + (asset.Trim |> fst |> Option.defaultValue 0.0<sec>)
+
+                                do! acc
+                                do! adelay delay audio delayed
+                            })
+                        (builder.Return())
 
                 let! outputA = innerNode
-                do! mixAudio audios outputA
+                do! mixAudio audiosDelayed outputA
                 return outputA
             }
 

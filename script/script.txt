@@ -45,12 +45,6 @@
   pos: x <- 500px; y <- 500px
   resize: scale <- 2.0
   => #gopher
-
-#動画:
-  path <- sample/sample-10s.mp4
-  pos: x <- 1000px; y <- 500px
-  trim: start <- 5s; end <- 8s
-  resize: scale <- 0.5
   
 @ つむぎ:
   > モナドは単なる自己{関手|かんしゅ}の圏におけるモノイド対象だよ．
@@ -59,6 +53,12 @@
     #on ほっぺ/かげり
     #on 目/基本目セット/黒目/目逸らし
   > 何か問題でも？
+
+#動画:
+  path <- sample/sample-10s.mp4
+  pos: x <- 1000px; y <- 500px
+  trim: start <- 0s; end <- 10s
+  resize: scale <- 0.5
 
 @ めたん:
   #立ち絵: #on 白ロリ服/左腕/口元に指

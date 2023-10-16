@@ -48,6 +48,12 @@ type Asset =
         | Video asset -> asset.EndFrame
         | Audio asset -> asset.EndFrame
 
+    member this.Trim =
+        match this with
+        | Image _ -> None, None
+        | Video asset -> asset.Trim
+        | Audio asset -> asset.Trim
+
     static member withEndFrame (endFrame: int) (this: Asset) =
         match this with
         | Image asset -> Image { asset with EndFrame = Some endFrame }

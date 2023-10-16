@@ -54,27 +54,34 @@ module FilterComplexStateM =
           Output = output }
 
 type FFmpegBuilder() =
-    member __.Bind(FFmpegStateM m, f) =
+    member __.Bind<'a, 'b>(FFmpegStateM m, f: 'a -> FFmpegBuilderStateM<'b>) =
         FFmpegStateM(fun s ->
             let (a, s') = m s
             FilterComplexStateM.run (f a) s')
 
-    member __.Return a = FilterComplexStateM.return_ a
+    member __.Return<'a>(a: 'a) = FilterComplexStateM.return_ a
 
-    member __.ReturnFrom(FFmpegStateM m) = FFmpegStateM m
+    member __.ReturnFrom<'a>(FFmpegStateM(m: FFmpegBuilderState -> 'a * FFmpegBuilderState)) =
+        FFmpegStateM(fun s ->
+            let (a, s') = m s
+            a, s')
 
-    member __.Zero() = FFmpegStateM(fun s -> ((), s))
+    member __.Zero() = FFmpegStateM(fun s -> (), s)
 
-    member __.Combine(FFmpegStateM m1, FFmpegStateM m2) =
+    member __.Combine<'a, 'b>
+        (
+            FFmpegStateM(m1: FFmpegBuilderState -> 'a * FFmpegBuilderState),
+            FFmpegStateM(m2: FFmpegBuilderState -> 'b * FFmpegBuilderState)
+        ) =
         FFmpegStateM(fun s ->
             let (a, s') = m1 s
             let (b, s'') = m2 s'
             (a, s''))
 
-    member __.Delay(f: unit -> FFmpegBuilderStateM<'a>) = f ()
+    member __.Delay<'a>(f: unit -> FFmpegBuilderStateM<'a>) = f ()
 
-    member this.For(xs: 'a seq, f: 'a -> FFmpegBuilderStateM<'b>) =
-        xs |> Seq.fold (fun acc x -> this.Combine(acc, f x)) (this.Zero())
+    member this.For<'a, 'b>(xs: 'a seq, f: 'a -> FFmpegBuilderStateM<'b>) =
+        xs |> Seq.map f |> Seq.reduceBack (fun a b -> this.Combine(a, b))
 
 module FFmpegBuilder =
     let builder = FFmpegBuilder()
@@ -294,6 +301,15 @@ module FFmpegBuilder =
                 "atrim"
                 [ FArg.KV("start", duration |> fst |> string)
                   FArg.KV("end", duration |> snd |> string) ]
+                [ input ]
+                [ output ]
+        )
+
+    let adelay (delay: float<Measure.sec>) (input: Node) (output: Node) =
+        yieldFilter (
+            Filter.Create
+                "adelay"
+                [ FArg.KV("delays", delay * 1000. |> string); FArg.KV("all", "1") ]
                 [ input ]
                 [ output ]
         )
