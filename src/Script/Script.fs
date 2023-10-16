@@ -135,7 +135,7 @@ type Value =
         this |> Value.tryAsNumeral |> Result.bind (Numeral.tryAsFloatMeas measure)
 
     static member tryAsFloatSec this =
-        this |> Value.tryAsFloatMeas "sec" |> Result.map (fun x -> x * 1.<Measure.sec>)
+        this |> Value.tryAsFloatMeas "s" |> Result.map (fun x -> x * 1.<Measure.sec>)
 
     static member tryAsFloatPx this =
         this |> Value.tryAsFloatMeas "px" |> Result.map (fun x -> x * 1.<Measure.px>)
