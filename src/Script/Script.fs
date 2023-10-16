@@ -134,6 +134,21 @@ type Value =
     static member tryAsFloatMeas measure this =
         this |> Value.tryAsNumeral |> Result.bind (Numeral.tryAsFloatMeas measure)
 
+    static member tryAsFloatSec this =
+        this |> Value.tryAsFloatMeas "sec" |> Result.map (fun x -> x * 1.<Measure.sec>)
+
+    static member tryAsFloatPx this =
+        this |> Value.tryAsFloatMeas "px" |> Result.map (fun x -> x * 1.<Measure.px>)
+
+    static member tryAsFloatPxToInt this =
+        this |> Value.tryAsFloatMeas "px" |> Result.map (fun x -> int x * 1<Measure.px>)
+
+    static member tryAsFloatPt this =
+        this |> Value.tryAsFloatMeas "pt" |> Result.map (fun x -> x * 1.<Measure.pt>)
+
+    static member tryAsFloatPtToInt this =
+        this |> Value.tryAsFloatMeas "pt" |> Result.map (fun x -> int x * 1<Measure.pt>)
+
     static member tryAsString this =
         match this with
         | String str -> Ok str
@@ -423,11 +438,9 @@ module Interpreter =
 
                         return env, Some font''
                     | "size" ->
-                        let! size = content |> Value.tryAsFloatMeas "pt"
+                        let! size = content |> Value.tryAsFloatPt
 
-                        let font'' =
-                            { font' with
-                                Size = Some(size * 1.<Measure.pt>) }
+                        let font'' = { font' with Size = Some size }
 
                         return env, Some font''
                     | "weight" ->
@@ -504,19 +517,15 @@ module Interpreter =
 
                     match fieldName with
                     | "x" ->
-                        let! x = contentExpr |> tryEval env |> Result.bind (Value.tryAsFloatMeas "px")
+                        let! x = contentExpr |> tryEval env |> Result.bind Value.tryAsFloatPxToInt
 
-                        let pos'' =
-                            { pos' with
-                                X = Some(int x * 1<Measure.px>) }
+                        let pos'' = { pos' with X = Some x }
 
                         return env, Some pos''
                     | "y" ->
-                        let! y = contentExpr |> tryEval env |> Result.bind (Value.tryAsFloatMeas "px")
+                        let! y = contentExpr |> tryEval env |> Result.bind Value.tryAsFloatPxToInt
 
-                        let pos'' =
-                            { pos' with
-                                Y = Some(int y * 1<Measure.px>) }
+                        let pos'' = { pos' with Y = Some y }
 
                         return env, Some pos''
                     | _ -> return! Error $"Unknown field name `{fieldName}` in pos."
@@ -528,6 +537,52 @@ module Interpreter =
         block
         |> Option.toResultWith "Expected block."
         |> Result.bind (Seq.fold runPosStatement init)
+
+    type private DurationState =
+        { Start: float<Measure.sec> option
+          End: float<Measure.sec> option }
+
+        static member tryCompose
+            (this: DurationState)
+            : Result<float<Measure.sec> option * float<Measure.sec> option, string> =
+            monad { return (this.Start, this.End) }
+
+    let private runDuration (block: Statement list option) (env: EvalEnv, durationState: DurationState option) =
+        let runDurationStatement
+            (acc: Result<EvalEnv * DurationState option, string>)
+            (statement: Statement)
+            : Result<EvalEnv * DurationState option, string> =
+            monad {
+                let! env, duration = acc
+
+                match statement with
+                | Gets(targetExpr, contentExpr) ->
+                    let! fieldName = targetExpr |> tryEval env |> Result.bind Value.tryAsString
+
+                    let duration' = duration |> Option.defaultValue { Start = None; End = None }
+
+                    match fieldName with
+                    | "start" ->
+                        let! start = contentExpr |> tryEval env |> Result.bind Value.tryAsFloatSec
+
+                        let pos'' = { duration' with Start = Some start }
+
+                        return env, Some pos''
+                    | "end" ->
+                        let! end_ = contentExpr |> tryEval env |> Result.bind Value.tryAsFloatSec
+
+                        let pos'' = { duration' with End = Some end_ }
+
+                        return env, Some pos''
+                    | _ -> return! Error $"Unknown field name `{fieldName}` in pos."
+                | _ -> return! Error "Invalid statement."
+            }
+
+        let init = Ok(env, durationState)
+
+        block
+        |> Option.toResultWith "Expected block."
+        |> Result.bind (Seq.fold runDurationStatement init)
 
     type private SizeState =
         { Width: int<Measure.px> option
@@ -562,19 +617,15 @@ module Interpreter =
 
                     match fieldName with
                     | "width" ->
-                        let! width = content |> Value.tryAsFloatMeas "px"
+                        let! width = content |> Value.tryAsFloatPxToInt
 
-                        let size'' =
-                            { size' with
-                                Width = Some(int width * 1<Measure.px>) }
+                        let size'' = { size' with Width = Some width }
 
                         return env, Some size''
                     | "height" ->
-                        let! height = content |> Value.tryAsFloatMeas "px"
+                        let! height = content |> Value.tryAsFloatPxToInt
 
-                        let size'' =
-                            { size' with
-                                Height = Some(int height * 1<Measure.px>) }
+                        let size'' = { size' with Height = Some height }
 
                         return env, Some size''
                     | _ -> return! Error $"Unknown field name `{fieldName}` in size."
@@ -649,19 +700,15 @@ module Interpreter =
 
                     match fieldName with
                     | "width" ->
-                        let! width = content |> Value.tryAsFloatMeas "px"
+                        let! width = content |> Value.tryAsFloatPxToInt
 
-                        let resize'' =
-                            { resize' with
-                                Width = Some(int width * 1<Measure.px>) }
+                        let resize'' = { resize' with Width = Some width }
 
                         return env, Some resize''
                     | "height" ->
-                        let! height = content |> Value.tryAsFloatMeas "px"
+                        let! height = content |> Value.tryAsFloatPxToInt
 
-                        let resize'' =
-                            { resize' with
-                                Height = Some(int height * 1<Measure.px>) }
+                        let resize'' = { resize' with Height = Some height }
 
                         return env, Some resize''
                     | "scale" ->
@@ -1176,11 +1223,194 @@ module Interpreter =
                     | None -> Ok None
                     | Some resize -> resize.TryToResize
 
+            let assetId = System.Guid.NewGuid().ToString("N")
+
+            let state' = movie.AddImage(state, assetId, path, pos, resize')
+
+            let env'' =
+                match config.BindsTo with
+                | None -> env'
+                | Some varName -> env'.WithVariable(varName, Value.AssetRef { Type = AssetType.Image; Id = assetId })
+
+            return env'', state'
+        }
+
+    type private AddVideoState =
+        { Path: string option
+          Pos: PosState option
+          Resize: ResizeState option
+          Trim: DurationState option
+          BindsTo: string option }
+
+    let runAddVideo
+        (movie: Frame.MovieBuilder)
+        (args: Value array)
+        (block: Statement list option)
+        (env: EvalEnv, state: Frame.MovieState)
+        : Result<EvalEnv * Frame.MovieState, string> =
+        let runAddVideoStatement (acc: Result<EvalEnv * AddVideoState, string>) (statement: Statement) =
+            monad {
+                let! env, config = acc
+
+                match statement with
+                | Gets(targetExpr, contentExpr) ->
+                    let! fieldName = targetExpr |> tryEval env |> Result.bind Value.tryAsString
+                    let! content = contentExpr |> tryEval env
+
+                    match fieldName with
+                    | "path" ->
+                        let! path = content |> Value.tryAsString
+
+                        let config': AddVideoState = { config with Path = Some path }
+
+                        return env, config'
+                    | _ -> return! Error $"Unknown field name `{fieldName}` in add-image."
+                | Do(expr, optBlock) ->
+                    let! fieldName = expr |> tryEval env |> Result.bind Value.tryAsString
+
+                    match fieldName with
+                    | "pos" ->
+                        let! env', pos' = runPos optBlock (env, config.Pos)
+                        let config' = { config with Pos = pos' }
+                        return env', config'
+                    | "resize" ->
+                        let! env', resize' = runResize optBlock (env, config.Resize)
+                        let config' = { config with Resize = resize' }
+                        return env', config'
+                    | "trim" ->
+                        let! env', trim' = runDuration optBlock (env, config.Trim)
+                        let config' = { config with Trim = trim' }
+                        return env', config'
+                    | _ -> return! Error $"Unknown field name `{fieldName}` in add-image."
+                | BindsTo(targetExpr, pattern) ->
+                    if targetExpr.IsSome then
+                        do! Error "Expected no target."
+
+                    let pattern' =
+                        match pattern with
+                        | Pattern.Variable name -> name
+
+                    let config' = { config with BindsTo = Some pattern' }
+
+                    return env, config'
+                | _ -> return! Error "Invalid statement."
+            }
+
+        monad {
+            do! args |> ArrayExt.tryAsEmpty "Expected no arguments."
+
+            let! block' = block |> Option.toResultWith "Expected block."
+
+            let initialState =
+                { Path = None
+                  Pos = None
+                  Resize = None
+                  Trim = None
+                  BindsTo = None }
+
+            let! env', config = (Ok(env, initialState), block') ||> Seq.fold runAddVideoStatement
+
+            let! path = config.Path |> Option.toResultWith "Path is not set."
+
+            let! pos =
+                config.Pos
+                |> Option.toResultWith "Pos is not set."
+                |> Result.bind PosState.tryCompose
+
+            let! resize =
+                config.Resize
+                |> function
+                    | None -> Ok None
+                    | Some resize -> resize.TryToResize
+
+            let { Start = trimStart; End = trimEnd } =
+                config.Trim |> Option.defaultValue { Start = None; End = None }
+
             let! varName = config.BindsTo |> Option.toResultWith "Expected binding."
 
             let assetId = System.Guid.NewGuid().ToString("N")
 
-            let state' = movie.AddImage(state, assetId, path, pos, resize')
+            let state' = movie.AddVideo(state, assetId, path, pos, resize, trimStart, trimEnd)
+
+            let env'' =
+                env'.WithVariable(varName, Value.AssetRef { Type = AssetType.Image; Id = assetId })
+
+            return env'', state'
+        }
+
+    type private AddAudioState =
+        { Path: string option
+          Trim: DurationState option
+          BindsTo: string option }
+
+    let runAddAudio
+        (movie: Frame.MovieBuilder)
+        (args: Value array)
+        (block: Statement list option)
+        (env: EvalEnv, state: Frame.MovieState)
+        : Result<EvalEnv * Frame.MovieState, string> =
+        let runAddAudioStatement (acc: Result<EvalEnv * AddAudioState, string>) (statement: Statement) =
+            monad {
+                let! env, config = acc
+
+                match statement with
+                | Gets(targetExpr, contentExpr) ->
+                    let! fieldName = targetExpr |> tryEval env |> Result.bind Value.tryAsString
+                    let! content = contentExpr |> tryEval env
+
+                    match fieldName with
+                    | "path" ->
+                        let! path = content |> Value.tryAsString
+
+                        let config': AddAudioState = { config with Path = Some path }
+
+                        return env, config'
+                    | _ -> return! Error $"Unknown field name `{fieldName}` in add-image."
+                | Do(expr, optBlock) ->
+                    let! fieldName = expr |> tryEval env |> Result.bind Value.tryAsString
+
+                    match fieldName with
+                    | "trim" ->
+                        let! env', trim' = runDuration optBlock (env, config.Trim)
+                        let config' = { config with Trim = trim' }
+                        return env', config'
+                    | _ -> return! Error $"Unknown field name `{fieldName}` in add-image."
+                | BindsTo(targetExpr, pattern) ->
+                    if targetExpr.IsSome then
+                        do! Error "Expected no target."
+
+                    let pattern' =
+                        match pattern with
+                        | Pattern.Variable name -> name
+
+                    let config' = { config with BindsTo = Some pattern' }
+
+                    return env, config'
+                | _ -> return! Error "Invalid statement."
+            }
+
+        monad {
+            do! args |> ArrayExt.tryAsEmpty "Expected no arguments."
+
+            let! block' = block |> Option.toResultWith "Expected block."
+
+            let initialState =
+                { Path = None
+                  Trim = None
+                  BindsTo = None }
+
+            let! env', config = (Ok(env, initialState), block') ||> Seq.fold runAddAudioStatement
+
+            let! path = config.Path |> Option.toResultWith "Path is not set."
+
+            let { Start = trimStart; End = trimEnd } =
+                config.Trim |> Option.defaultValue { Start = None; End = None }
+
+            let! varName = config.BindsTo |> Option.toResultWith "Expected binding."
+
+            let assetId = System.Guid.NewGuid().ToString("N")
+
+            let state' = movie.AddAudio(state, assetId, path, trimStart, trimEnd)
 
             let env'' =
                 env'.WithVariable(varName, Value.AssetRef { Type = AssetType.Image; Id = assetId })
@@ -1203,18 +1433,8 @@ module Interpreter =
             if block.IsSome then
                 do! Error "Expected no block."
 
-            match assetRef.Type with
-            | AssetType.Image ->
-                let state' = movie.RemoveImage(state, assetRef.Id)
-                return env, state'
-            // TODO
-            // | AssetType.Audio ->
-            //     let state' = movie.RemoveAudio(state, assetRef.Id)
-            //     return env, state'
-            // | AssetType.Video ->
-            //     let state' = movie.RemoveVideo(state, assetRef.Id)
-            //     return env, state'
-            | _ -> return failwith "Not implemented yet." // TODO
+            let state' = movie.Remove(state, assetRef.Id)
+            return env, state'
         }
 
     //
@@ -1225,8 +1445,8 @@ module Interpreter =
           InnerOperator.appearance, runAppearance
           InnerOperator.setStyle, runSetStyle
           InnerOperator.addImage, runAddImage
-          //   InnerOperator.addAudio, runAddAudio
-          //   InnerOperator.addVideo, runAddVideo
+          InnerOperator.addAudio, runAddAudio
+          InnerOperator.addVideo, runAddVideo
           InnerOperator.remove, runRemove ]
         |> Map.ofSeq
 

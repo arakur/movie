@@ -226,7 +226,7 @@ module FFmpegBuilder =
     type Layer =
         { Pos: Pos
           Resize: Resize option
-          Duration: (float * float) option
+          Duration: (float<Measure.sec> * float<Measure.sec>) option
           Input: Node
           Shortest: bool }
 
@@ -278,10 +278,20 @@ module FFmpegBuilder =
                 do! overlay layers layerOutput output
             }
 
-    let trim (duration: float * float) (input: Node) (output: Node) =
+    let trim (duration: float<Measure.sec> * float<Measure.sec>) (input: Node) (output: Node) =
         yieldFilter (
             Filter.Create
                 "trim"
+                [ FArg.KV("start", duration |> fst |> string)
+                  FArg.KV("end", duration |> snd |> string) ]
+                [ input ]
+                [ output ]
+        )
+
+    let atrim (duration: float<Measure.sec> * float<Measure.sec>) (input: Node) (output: Node) =
+        yieldFilter (
+            Filter.Create
+                "atrim"
                 [ FArg.KV("start", duration |> fst |> string)
                   FArg.KV("end", duration |> snd |> string) ]
                 [ input ]

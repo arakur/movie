@@ -96,7 +96,7 @@ type MovieState =
                   Family = [] }
               Pos = { X = 0<px>; Y = 0<px> }
               Size = { Width = 0<px>; Height = 0<px> } }
-          Assets = { Images = Map.empty }
+          Assets = Map.empty
           Background = Background.RGB(0, 0, 0) }
 
 type Initialize =
@@ -118,7 +118,7 @@ type MovieBuilder() =
             { Font = initialize.Font
               Pos = initialize.Pos
               Size = initialize.Size }
-          Assets = { Images = Map.empty }
+          Assets = Map.empty
           Background = initialize.Background }
 
     [<CustomOperation "addSpeaker">]
@@ -144,33 +144,76 @@ type MovieBuilder() =
     [<CustomOperation "addImage">]
     member __.AddImage(s: MovieState, id: string, path: string, pos: Pos, resize: Resize option) =
         let asset =
-            { Path = path
-              Pos = pos
-              Resize = resize
-              StartFrame = s.Frames.Length
-              EndFrame = None }
+            Asset.Image
+                { Path = path
+                  Pos = pos
+                  Resize = resize
+                  StartFrame = s.Frames.Length
+                  EndFrame = None }
 
         let assets = s.Assets
 
-        let assets' =
-            { assets with
-                Images = assets.Images.Add(id, asset) }
+        let assets' = assets |> Map.add id asset
 
         { s with Assets = assets' }
 
-    [<CustomOperation "removeImage">]
-    member __.RemoveImage(s: MovieState, id: string) =
+    [<CustomOperation "addVideo">]
+    member __.AddVideo
+        (
+            s: MovieState,
+            id: string,
+            path: string,
+            pos: Pos,
+            resize: Resize option,
+            trimStart: float<sec> option,
+            trimEnd: float<sec> option
+        ) =
+        let asset =
+            Asset.Video
+                { Path = path
+                  Pos = pos
+                  Resize = resize
+                  Trim = (trimStart, trimEnd)
+                  StartFrame = s.Frames.Length
+                  EndFrame = None }
+
         let assets = s.Assets
 
-        let image = assets.Images.[id]
+        let assets' = assets |> Map.add id asset
 
-        let imageEnded =
-            { image with
-                EndFrame = Some s.Frames.Length }
+        { s with Assets = assets' }
 
-        let assets' =
-            { assets with
-                Images = assets.Images.Add(id, imageEnded) }
+    [<CustomOperation "addAudio">]
+    member __.AddAudio
+        (
+            s: MovieState,
+            id: string,
+            path: string,
+            trimStart: float<sec> option,
+            trimEnd: float<sec> option
+        ) =
+        let asset =
+            Asset.Audio
+                { Path = path
+                  Trim = (trimStart, trimEnd)
+                  StartFrame = s.Frames.Length
+                  EndFrame = None }
+
+        let assets = s.Assets
+
+        let assets' = assets |> Map.add id asset
+
+        { s with Assets = assets' }
+
+    [<CustomOperation "remove">]
+    member __.Remove(s: MovieState, id: string) =
+        let assets = s.Assets
+
+        let asset = assets.[id]
+
+        let assetEnded = asset |> Asset.withEndFrame s.Frames.Length
+
+        let assets' = assets |> Map.add id assetEnded
 
         { s with Assets = assets' }
 

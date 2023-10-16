@@ -17,7 +17,7 @@ type AppearanceArrangement =
 type FrameOutput =
     { VoiceFile: Path
       SubtitleFile: Path
-      Length: float
+      Length: float<sec>
       Arrangements: AppearanceArrangement list
       Pos: Pos }
 
@@ -93,7 +93,9 @@ type FrameOutput =
             (speechFiles, subtitleFiles)
             ||> List.map2 (fun voice subtitle ->
                 use reader = new Wave.WaveFileReader(voice)
-                let length = float reader.Length / float reader.WaveFormat.AverageBytesPerSecond
+
+                let length =
+                    float reader.Length / float reader.WaveFormat.AverageBytesPerSecond * 1.0<sec>
 
                 {| VoiceFile = voice
                    SubtitleFile = subtitle
@@ -140,149 +142,225 @@ type FrameOutput =
         (assets: Assets)
         (output: Path)
         =
+        let voices =
+            inputNodeN (
+                frameOutputs
+                |> List.map (fun frame ->
+                    { Path = frame.VoiceFile
+                      Arguments = [] })
+            )
+            |>> List.map InputNode.aInput
+
+        let frameSlits =
+            frameOutputs
+            |> Seq.map (fun frame -> frame.Length)
+            |> Seq.scan (+) 0.<sec>
+            |> Array.ofSeq
+
+        let frameDurations =
+            frameSlits |> Seq.windowed 2 |> Seq.map (fun window -> window[0], window[1])
+
+        let wholeLength = frameOutputs |> List.map (fun frame -> frame.Length) |> Seq.sum
+
+        let backgroundNode =
+            builder {
+                match background with
+                | Image path ->
+                    let! input =
+                        inputNode
+                            { Path = path
+                              Arguments = [ Arg.KV("loop", "1"); Arg.KV("t", wholeLength.ToString()) ] }
+
+                    return input.VInput, None
+                | Video path ->
+                    let! input = inputNode { Path = path; Arguments = [] }
+
+                    return input.VInput, Some input.AInput
+                | RGB(r, g, b) ->
+                    // FIXME: Cannot set a color source as background, it has overlaid on other sources.
+                    let! colorInf = innerNode
+                    let! color = innerNode
+                    do! colorSource r g b colorInf
+                    do! trim (0.<sec>, wholeLength) colorInf color
+                    return color, None
+            }
+
+        let assets' =
+            assets.Values
+            |> Seq.fold
+                (fun acc asset ->
+                    builder {
+                        let! acc = acc
+                        let! input = inputNode { Path = asset.Path; Arguments = [] }
+                        return (asset, input) :: acc
+                    })
+                ([] |> builder.Return)
+
+        let collectAppSubtitleLayers frame duration layers =
+            builder {
+                let! layers = layers
+
+                let! apps =
+                    inputNodeN (frame.Arrangements |> List.map (fun app -> { Path = app.Path; Arguments = [] }))
+                    |>> List.map InputNode.vInput
+
+                let resizes = frame.Arrangements |> List.map (fun app -> app.Resize)
+
+                let appLayers =
+                    (frame.Arrangements, resizes)
+                    ||> List.mapi2 (fun i arr resize ->
+                        { Pos = arr.Pos
+                          Resize = resize
+                          Duration = Some duration
+                          Input = apps.[i]
+                          Shortest = false })
+
+                let! subtitle =
+                    inputNode
+                        { Path = frame.SubtitleFile
+                          Arguments = [] }
+
+                let subtitleLayer =
+                    { Pos = frame.Pos
+                      Resize = None
+                      Duration = Some duration
+                      Input = subtitle.VInput
+                      Shortest = false }
+
+                return (subtitleLayer :: appLayers) :: layers
+            }
+
+        let collectAssetLayers (asset: Asset, assetInput) layers =
+            builder {
+                let! layers = layers
+
+                match asset with
+                | Asset.Image asset ->
+                    let duration =
+                        frameSlits.[asset.StartFrame],
+                        asset.EndFrame
+                        |> Option.map (fun endFrame -> frameSlits.[endFrame])
+                        |> Option.defaultValue wholeLength
+
+                    let imageLayer =
+                        { Pos = asset.Pos
+                          Resize = asset.Resize
+                          Duration = Some duration
+                          Input = assetInput.VInput
+                          Shortest = false }
+
+                    return [ imageLayer ] :: layers
+                | Asset.Video asset ->
+                    let! trimmed = innerNode
+                    let start, end_ = asset.Trim
+
+                    let start', end' =
+                        start |> Option.defaultValue 0.0<sec>, end_ |> Option.defaultValue wholeLength
+
+                    do! trim (start', end') assetInput.VInput trimmed
+
+                    let duration =
+                        frameSlits.[asset.StartFrame],
+                        asset.EndFrame
+                        |> Option.map (fun endFrame -> frameSlits.[endFrame])
+                        |> Option.defaultValue wholeLength
+
+                    let videoLayer =
+                        { Pos = asset.Pos
+                          Resize = asset.Resize
+                          Duration = Some duration
+                          Input = trimmed
+                          Shortest = false }
+
+                    return [ videoLayer ] :: layers
+                | Asset.Audio _ -> return layers
+            }
+
+        let overlayLayers prevV layers =
+            builder {
+                let! prevV = prevV
+                let! currentV = innerNode
+                do! overlay layers prevV currentV
+                return currentV
+            }
+
+        let voiceConcatA voices =
+            builder {
+                let! voiceConcatA = innerNode
+                do! concatA voices voiceConcatA
+                return voiceConcatA
+            }
+
+        let collectAssetAudios (asset, assetInput) audios =
+            builder {
+                let! audios = audios
+
+                match asset with
+                | Asset.Image _ -> return audios
+                | Asset.Video asset ->
+                    let! trimmed = innerNode
+                    let start, end_ = asset.Trim
+
+                    let start', end' =
+                        start |> Option.defaultValue 0.0<sec>, end_ |> Option.defaultValue wholeLength
+
+                    do! atrim (start', end') assetInput.AInput trimmed
+
+                    return trimmed :: audios
+                | Asset.Audio asset ->
+                    let! trimmed = innerNode
+                    let start, end_ = asset.Trim
+
+                    let start', end' =
+                        start |> Option.defaultValue 0.0<sec>, end_ |> Option.defaultValue wholeLength
+
+                    do! atrim (start', end') assetInput.AInput trimmed
+
+                    return trimmed :: audios
+            }
+
+        let outputV backgroundNodeV assets' =
+            builder {
+                let! frameLayers =
+                    []
+                    |> builder.Return
+                    |> Seq.foldBack2 collectAppSubtitleLayers frameOutputs frameDurations
+                    |> Seq.foldBack collectAssetLayers assets'
+
+                return! frameLayers |> Seq.fold overlayLayers (builder.Return backgroundNodeV)
+            }
+
+        let outputA backgroundNodeA assets' =
+            builder {
+                let! voices = voices
+
+                let! voiceConcatA = voiceConcatA voices
+
+                let voiceBg =
+                    match backgroundNodeA with
+                    | Some backgroundA -> [ voiceConcatA; backgroundA ]
+                    | None -> [ voiceConcatA ]
+
+                let! audios = voiceBg |> builder.Return |> Seq.foldBack collectAssetAudios assets'
+
+                let! outputA = innerNode
+                do! mixAudio audios outputA
+                return outputA
+            }
+
         let arguments =
             builder {
-                let! voices =
-                    inputNodeN (
-                        frameOutputs
-                        |> List.map (fun frame ->
-                            { Path = frame.VoiceFile
-                              Arguments = [] })
-                    )
-                    |>> List.map InputNode.aInput
+                let! backgroundNodeV, backgroundNodeA = backgroundNode
+                let! assets' = assets'
 
-                let frameSlits =
-                    frameOutputs
-                    |> Seq.map (fun frame -> frame.Length)
-                    |> Seq.scan (+) 0.0
-                    |> Array.ofSeq
-
-                let frameDurations =
-                    frameSlits |> Seq.windowed 2 |> Seq.map (fun window -> window[0], window[1])
-
-                let wholeLength = frameOutputs |> List.map (fun frame -> frame.Length) |> Seq.sum
-
-                let! backgroundNodeV, backgroundNodeA =
-                    builder {
-                        match background with
-                        | Image path ->
-                            let! input =
-                                inputNode
-                                    { Path = path
-                                      Arguments = [ Arg.KV("loop", "1"); Arg.KV("t", wholeLength.ToString()) ] }
-
-                            return input.VInput, None
-                        | Video path ->
-                            let! input = inputNode { Path = path; Arguments = [] }
-
-                            return input.VInput, Some input.AInput
-                        | RGB(r, g, b) ->
-                            // FIXME: Cannot set a color source as background, it has overlaid on other sources.
-                            let! colorInf = innerNode
-                            let! color = innerNode
-                            do! colorSource r g b colorInf
-                            do! trim (0, wholeLength) colorInf color
-                            return color, None
-                    }
-
-                let! frameLayersList =
-                    builder { return [] }
-                    |> Seq.foldBack
-                        (fun (frame, duration) layers ->
-                            builder {
-                                let! layers = layers
-
-                                let! apps =
-                                    inputNodeN (
-                                        frame.Arrangements |> List.map (fun app -> { Path = app.Path; Arguments = [] })
-                                    )
-                                    |>> List.map InputNode.vInput
-
-                                let resizes = frame.Arrangements |> List.map (fun app -> app.Resize)
-
-                                let appLayers =
-                                    (frame.Arrangements, resizes)
-                                    ||> List.mapi2 (fun i arr resize ->
-                                        { Pos = arr.Pos
-                                          Resize = resize
-                                          Duration = Some duration
-                                          Input = apps.[i]
-                                          Shortest = false })
-
-                                let! subtitle =
-                                    inputNode
-                                        { Path = frame.SubtitleFile
-                                          Arguments = [] }
-
-                                let subtitleLayer =
-                                    { Pos = frame.Pos
-                                      Resize = None
-                                      Duration = Some duration
-                                      Input = subtitle.VInput
-                                      Shortest = false }
-
-                                return (subtitleLayer :: appLayers) :: layers
-                            })
-                        (Seq.zip frameOutputs frameDurations)
-                    |> Seq.foldBack
-                        (fun (imageAsset: ImageAsset) layers ->
-                            builder {
-                                let! layers = layers
-
-                                let! image =
-                                    inputNode
-                                        { Path = imageAsset.Path
-                                          Arguments = [] }
-
-                                let duration =
-                                    frameSlits.[imageAsset.StartFrame],
-                                    imageAsset.EndFrame
-                                    |> Option.map (fun endFrame -> frameSlits.[endFrame])
-                                    |> Option.defaultValue wholeLength
-
-                                let imageLayer =
-                                    { Pos = imageAsset.Pos
-                                      Resize = imageAsset.Resize
-                                      Duration = Some duration
-                                      Input = image.VInput
-                                      Shortest = false }
-
-                                return [ imageLayer ] :: layers
-                            })
-                        assets.Images.Values
-                    |>> Seq.toList
-
-                let! outputV =
-                    frameLayersList
-                    |> Seq.fold
-                        (fun prevV layers ->
-                            builder {
-                                let! prevV = prevV
-                                let! currentV = innerNode
-                                do! overlay layers prevV currentV
-                                return currentV
-                            })
-                        (builder { return backgroundNodeV })
-
-                let! voiceConcatA = innerNode
-
-                do! concatA voices voiceConcatA
-
-                let! outputA =
-                    builder {
-                        match backgroundNodeA with
-                        | Some backgroundA ->
-                            let! outputA = innerNode
-                            do! mixAudio [ backgroundA; voiceConcatA ] outputA
-                            return outputA
-                        | None -> return voiceConcatA
-                    }
+                let! outputV = outputV backgroundNodeV assets'
+                let! outputA = outputA backgroundNodeA assets'
 
                 do! mapping outputV
                 do! mapping outputA
             }
             |> FilterComplexStateM.build [ Arg.KV("pix_fmt", "yuv420p") ] output
 
-        // printfn "%s" <| arguments.Compose() // DEBUG
+        printfn "%s" <| arguments.Compose() // DEBUG
 
         ffmpeg.StartProcess arguments

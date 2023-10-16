@@ -1,6 +1,9 @@
 ﻿namespace Measure
 
 [<Measure>]
+type sec
+
+[<Measure>]
 type pt
 
 [<Measure>]

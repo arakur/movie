@@ -43,8 +43,15 @@
 #画像:
   path <- sample/gopher.png
   pos: x <- 500px; y <- 500px
+  resize: scale <- 2.0
   => #gopher
 
+#動画:
+  path <- sample/sample-10s.mp4
+  pos: x <- 1000px; y <- 500px
+  trim: start <- 5s; end <- 8s
+  resize: scale <- 0.5
+  
 @ つむぎ:
   > モナドは単なる自己{関手|かんしゅ}の圏におけるモノイド対象だよ．
   #消去 #gopher
@@ -57,15 +64,15 @@
   #立ち絵: #on 白ロリ服/左腕/口元に指
   > おっそうだな．
 
-// #add-speaker ずんだもん:
-//   name <- ずんだもん
-//   style <- ノーマル
-//   font: color <- (144, 238, 144)
-//   appearance:
-//     path <- appearance/ずんだもん
-//     pos: x <- 1100px; y <- 400px
-//     resize: scale <- 0.5
+#add-speaker ずんだもん:
+  name <- ずんだもん
+  style <- ノーマル
+  font: color <- (144, 238, 144)
+  appearance:
+    path <- appearance/ずんだもん
+    pos: x <- 1100px; y <- 400px
+    resize: scale <- 0.5
 
-// @ ずんだもん:
-//   > それはそうと {Gröbner|ぐれぶなー} 基底にはポン酢が合うのだ．
+@ ずんだもん:
+  > それはそうと {Gröbner|ぐれぶなー} 基底にはポン酢が合うのだ．
 
