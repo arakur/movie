@@ -4,7 +4,7 @@ open FSharpPlus
 open FSharpPlus.Data
 open FSharpx.Collections
 
-module Expr =
+module Interpreter =
     let rec tryEval (env: IEvalEnv) (expr: Expr) : Result<Value, string> =
         match expr with
         | Expr.Numeral(n, m) ->
@@ -46,7 +46,6 @@ module Expr =
             |> Result.map Seq.toArray
             |> Result.map Value.Tuple
 
-module Interpreter =
     type private FontState =
         { Color: Types.Color option
           Family: string RevList
@@ -92,8 +91,8 @@ module Interpreter =
 
                 match statement with
                 | Gets(targetExpr, contentExpr) ->
-                    let! target = targetExpr |> Expr.tryEval env
-                    let! content = contentExpr |> Expr.tryEval env
+                    let! target = targetExpr |> tryEval env
+                    let! content = contentExpr |> tryEval env
 
                     let font' =
                         font
@@ -193,19 +192,19 @@ module Interpreter =
 
                 match statement with
                 | Gets(targetExpr, contentExpr) ->
-                    let! fieldName = targetExpr |> Expr.tryEval env |> Result.bind Value.tryAsString
+                    let! fieldName = targetExpr |> tryEval env |> Result.bind Value.tryAsString
 
                     let pos' = pos |> Option.defaultValue { X = None; Y = None }
 
                     match fieldName with
                     | "x" ->
-                        let! x = contentExpr |> Expr.tryEval env |> Result.bind Value.tryAsFloatPxToInt
+                        let! x = contentExpr |> tryEval env |> Result.bind Value.tryAsFloatPxToInt
 
                         let pos'' = { pos' with X = Some x }
 
                         return env, Some pos''
                     | "y" ->
-                        let! y = contentExpr |> Expr.tryEval env |> Result.bind Value.tryAsFloatPxToInt
+                        let! y = contentExpr |> tryEval env |> Result.bind Value.tryAsFloatPxToInt
 
                         let pos'' = { pos' with Y = Some y }
 
@@ -239,19 +238,19 @@ module Interpreter =
 
                 match statement with
                 | Gets(targetExpr, contentExpr) ->
-                    let! fieldName = targetExpr |> Expr.tryEval env |> Result.bind Value.tryAsString
+                    let! fieldName = targetExpr |> tryEval env |> Result.bind Value.tryAsString
 
                     let duration' = duration |> Option.defaultValue { Start = None; End = None }
 
                     match fieldName with
                     | "start" ->
-                        let! start = contentExpr |> Expr.tryEval env |> Result.bind Value.tryAsFloatSec
+                        let! start = contentExpr |> tryEval env |> Result.bind Value.tryAsFloatSec
 
                         let pos'' = { duration' with Start = Some start }
 
                         return env, Some pos''
                     | "end" ->
-                        let! end_ = contentExpr |> Expr.tryEval env |> Result.bind Value.tryAsFloatSec
+                        let! end_ = contentExpr |> tryEval env |> Result.bind Value.tryAsFloatSec
 
                         let pos'' = { duration' with End = Some end_ }
 
@@ -290,8 +289,8 @@ module Interpreter =
 
                 match statement with
                 | Gets(targetExpr, contentExpr) ->
-                    let! target = targetExpr |> Expr.tryEval env
-                    let! content = contentExpr |> Expr.tryEval env
+                    let! target = targetExpr |> tryEval env
+                    let! content = contentExpr |> tryEval env
 
                     let size' = size |> Option.defaultValue { Width = None; Height = None }
 
@@ -366,8 +365,8 @@ module Interpreter =
 
                 match statement with
                 | Gets(targetExpr, contentExpr) ->
-                    let! target = targetExpr |> Expr.tryEval env
-                    let! content = contentExpr |> Expr.tryEval env
+                    let! target = targetExpr |> tryEval env
+                    let! content = contentExpr |> tryEval env
 
                     let resize' =
                         resize
@@ -471,13 +470,13 @@ module Interpreter =
 
                 match statement with
                 | Gets(targetExpr, contentExpr) ->
-                    let! target = targetExpr |> Expr.tryEval env |> Result.bind Value.tryAsString
+                    let! target = targetExpr |> tryEval env |> Result.bind Value.tryAsString
 
                     match target with
                     | "background" ->
                         let! backgroundTypeValue, backgroundContentValue =
                             contentExpr
-                            |> Expr.tryEval env
+                            |> tryEval env
                             |> Result.bind Value.tryAsTuple
                             |> Result.bind (ArrayExt.tryAsTuple2 "Expected a tuple with 2 elements.")
 
@@ -520,7 +519,7 @@ module Interpreter =
                         | _ -> return! Error "Unknown background type."
                     | _ -> return! Error "Invalid assignment."
                 | Do(expr, optBlock) ->
-                    let! fieldName = expr |> Expr.tryEval env |> Result.bind Value.tryAsString
+                    let! fieldName = expr |> tryEval env |> Result.bind Value.tryAsString
 
                     match fieldName with
                     | "font" ->
@@ -603,7 +602,7 @@ module Interpreter =
 
                 match statement with
                 | Do(expr, optBlock) ->
-                    let! fieldName = expr |> Expr.tryEval env |> Result.bind Value.tryAsString
+                    let! fieldName = expr |> tryEval env |> Result.bind Value.tryAsString
 
                     match fieldName with
                     | "pos" ->
@@ -616,8 +615,8 @@ module Interpreter =
                         return env', Some appState''
                     | _ -> return! Error $"Unknown field name `{fieldName}` in appearance."
                 | Gets(targetExpr, contentExpr) ->
-                    let! fieldName = targetExpr |> Expr.tryEval env |> Result.bind Value.tryAsString
-                    let! content = contentExpr |> Expr.tryEval env
+                    let! fieldName = targetExpr |> tryEval env |> Result.bind Value.tryAsString
+                    let! content = contentExpr |> tryEval env
 
                     match fieldName with
                     | "path" ->
@@ -682,24 +681,24 @@ module Interpreter =
 
                 match statement with
                 | Gets(targetExpr, contentExpr) ->
-                    let! target = targetExpr |> Expr.tryEval env |> Result.bind Value.tryAsString
+                    let! target = targetExpr |> tryEval env |> Result.bind Value.tryAsString
 
                     match target with
                     | "name" ->
-                        let! name = contentExpr |> Expr.tryEval env |> Result.bind Value.tryAsString
+                        let! name = contentExpr |> tryEval env |> Result.bind Value.tryAsString
 
                         let config' = { config with Name = Some name }
 
                         return env, config'
                     | "style" ->
-                        let! style = contentExpr |> Expr.tryEval env |> Result.bind Value.tryAsString
+                        let! style = contentExpr |> tryEval env |> Result.bind Value.tryAsString
 
                         let config' = { config with Style = Some style }
 
                         return env, config'
                     | _ -> return! Error "Invalid assignment."
                 | Do(expr, optBlock) ->
-                    let! fieldName = expr |> Expr.tryEval env |> Result.bind Value.tryAsString
+                    let! fieldName = expr |> tryEval env |> Result.bind Value.tryAsString
 
                     match fieldName with
                     | "font" ->
@@ -779,7 +778,7 @@ module Interpreter =
                     if block <> None then
                         do! Error "Expected no block."
 
-                    let! s, args = expr |> Expr.tryEval env |> Result.bind Value.tryAsInnerOperatorApplied
+                    let! s, args = expr |> tryEval env |> Result.bind Value.tryAsInnerOperatorApplied
 
                     let! op = operators.TryFind s |> Option.toResultWith "Unknown inner operator."
                     let! env', f' = op args block
@@ -839,8 +838,8 @@ module Interpreter =
 
                 match statement with
                 | Gets(targetExpr, contentExpr) ->
-                    let! fieldName = targetExpr |> Expr.tryEval env |> Result.bind Value.tryAsString
-                    let! content = contentExpr |> Expr.tryEval env
+                    let! fieldName = targetExpr |> tryEval env |> Result.bind Value.tryAsString
+                    let! content = contentExpr |> tryEval env
 
                     match fieldName with
                     | "path" ->
@@ -851,7 +850,7 @@ module Interpreter =
                         return env, config'
                     | _ -> return! Error $"Unknown field name `{fieldName}` in add-image."
                 | Do(expr, optBlock) ->
-                    let! fieldName = expr |> Expr.tryEval env |> Result.bind Value.tryAsString
+                    let! fieldName = expr |> tryEval env |> Result.bind Value.tryAsString
 
                     match fieldName with
                     | "pos" ->
@@ -936,8 +935,8 @@ module Interpreter =
 
                 match statement with
                 | Gets(targetExpr, contentExpr) ->
-                    let! fieldName = targetExpr |> Expr.tryEval env |> Result.bind Value.tryAsString
-                    let! content = contentExpr |> Expr.tryEval env
+                    let! fieldName = targetExpr |> tryEval env |> Result.bind Value.tryAsString
+                    let! content = contentExpr |> tryEval env
 
                     match fieldName with
                     | "path" ->
@@ -948,7 +947,7 @@ module Interpreter =
                         return env, config'
                     | _ -> return! Error $"Unknown field name `{fieldName}` in add-image."
                 | Do(expr, optBlock) ->
-                    let! fieldName = expr |> Expr.tryEval env |> Result.bind Value.tryAsString
+                    let! fieldName = expr |> tryEval env |> Result.bind Value.tryAsString
 
                     match fieldName with
                     | "pos" ->
@@ -1037,8 +1036,8 @@ module Interpreter =
 
                 match statement with
                 | Gets(targetExpr, contentExpr) ->
-                    let! fieldName = targetExpr |> Expr.tryEval env |> Result.bind Value.tryAsString
-                    let! content = contentExpr |> Expr.tryEval env
+                    let! fieldName = targetExpr |> tryEval env |> Result.bind Value.tryAsString
+                    let! content = contentExpr |> tryEval env
 
                     match fieldName with
                     | "path" ->
@@ -1049,7 +1048,7 @@ module Interpreter =
                         return env, config'
                     | _ -> return! Error $"Unknown field name `{fieldName}` in add-image."
                 | Do(expr, optBlock) ->
-                    let! fieldName = expr |> Expr.tryEval env |> Result.bind Value.tryAsString
+                    let! fieldName = expr |> tryEval env |> Result.bind Value.tryAsString
 
                     match fieldName with
                     | "trim" ->
@@ -1144,11 +1143,11 @@ module Interpreter =
 
                 match statement with
                 | Do(expr, block) ->
-                    let! s, args = expr |> Expr.tryEval env |> Result.bind Value.tryAsInnerOperatorApplied
+                    let! s, args = expr |> tryEval env |> Result.bind Value.tryAsInnerOperatorApplied
                     let! op = statementOperators.TryFind s |> Option.toResultWith "Unknown inner operator."
                     return! op movie args block (env, state)
                 | At(expr, block) ->
-                    let! name = expr |> Expr.tryEval env |> Result.bind Value.tryAsString
+                    let! name = expr |> tryEval env |> Result.bind Value.tryAsString
 
                     let state' = movie.SetSpeaker(state, name)
 

@@ -1,13 +1,12 @@
 module private Parser.Expr
 
-open Script
 open FSharpPlus
 
 let rec tryFrom (intermediate: IntermediateExpr) =
     match intermediate with
-    | IntermediateExpr.Numeral(value, measure) -> Ok(Expr.Numeral(value, measure))
-    | IntermediateExpr.String(value) -> Ok(Expr.String value)
-    | IntermediateExpr.Variable(value) -> Ok(Expr.Variable value)
+    | IntermediateExpr.Numeral(value, measure) -> Ok(Script.Expr.Numeral(value, measure)) 
+    | IntermediateExpr.String(value) -> Ok(Script.Expr.String value)
+    | IntermediateExpr.Variable(value) -> Ok(Script.Expr.Variable value)
     | IntermediateExpr.App(func, args) ->
         monad {
             let! func' = tryFrom func
@@ -24,7 +23,7 @@ let rec tryFrom (intermediate: IntermediateExpr) =
                     (Ok [])
                 |>> List.rev
 
-            return Expr.App(func', args')
+            return Script.Expr.App(func', args')
         }
     | IntermediateExpr.BinOpSeries(init: (IntermediateExpr * BinaryOperator) list, last) ->
         // TODO: Give this from outside.
@@ -86,11 +85,11 @@ let rec tryFrom (intermediate: IntermediateExpr) =
                                 parts'
                                 |> Seq.rev
                                 |> Seq.reduce (fun (expr0, op0) (expr1, op1) ->
-                                    Expr.BinaryOperator(op0, expr0, expr1), op1)
+                                    Script.Expr.BinaryOperator(op0, expr0, expr1), op1)
                                 |> (fun (expr, op) ->
                                     monad {
                                         let! lastExpr = fold restDictionary lastPart
-                                        return Expr.BinaryOperator(op, expr, lastExpr)
+                                        return Script.Expr.BinaryOperator(op, expr, lastExpr)
                                     }))
                         | Associativity.Right ->
                             parts
@@ -109,7 +108,7 @@ let rec tryFrom (intermediate: IntermediateExpr) =
                                 ||> Seq.fold (fun acc (expr, op) ->
                                     monad {
                                         let! acc' = acc
-                                        return Expr.BinaryOperator(op, expr, acc')
+                                        return Script.Expr.BinaryOperator(op, expr, acc')
                                     }))
                         | Associativity.None ->
                             match parts with
@@ -117,7 +116,7 @@ let rec tryFrom (intermediate: IntermediateExpr) =
                                 monad {
                                     let! first = fold restDictionary (init', last')
                                     let! second = fold restDictionary lastPart
-                                    return Expr.BinaryOperator(op', first, second)
+                                    return Script.Expr.BinaryOperator(op', first, second)
                                 }
                             | [] -> Error "Unreachable."
                             | _ ->
@@ -139,4 +138,4 @@ let rec tryFrom (intermediate: IntermediateExpr) =
                 let! expr = tryFrom content
                 return expr :: acc
             })
-        |>> Expr.Tuple
+        |>> Script.Expr.Tuple
