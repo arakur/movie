@@ -120,7 +120,7 @@ let rec tryFrom (intermediate: IntermediateExpr) =
                                         "An operator `%s` is not associative."
                                         (parts.Head
                                          |> function
-                                             | (_, _, op) -> op.Name)
+                                             | _, _, op -> op.Name)
                                 ))
 
         fold binOpDictionary (init, last)
