@@ -32,19 +32,34 @@ type PriorityRelationGraphNode =
             Pred = this.Pred |> Set.remove node }
 
 type PriorityRelationGraph =
-    { NextEdgeIndex: int
+    { NextNodeIndex: int
+      NextEdgeIndex: int
       Edges: Map<AssetRef, PriorityRelationGraphNode>
+      NodeIndices: Map<AssetRef, int>
       EdgeIndices: Map<AssetRef * AssetRef, int> }
 
     static member empty =
-        { NextEdgeIndex = 0
+        { NextNodeIndex = 0
+          NextEdgeIndex = 0
           Edges = Map.empty
+          NodeIndices = Map.empty
           EdgeIndices = Map.empty }
+
+    member this.Nodes = this.NodeIndices |> Map.keys
+
+    member this.NodeIndex node = this.NodeIndices.[node]
+
+    member this.EdgeIndex edge = this.EdgeIndices.[edge]
 
     static member addNode node this =
         let edges' = this.Edges |> Map.add node PriorityRelationGraphNode.empty
+        let nodeIndices' = this.NodeIndices |> Map.add node this.NextNodeIndex
+        let index' = this.NextNodeIndex + 1
 
-        { this with Edges = edges' }
+        { this with
+            Edges = edges'
+            NodeIndices = nodeIndices'
+            NextNodeIndex = index' }
 
     static member addEdge lower upper this =
         // Memoized DFS to collect all edges, which is the minimal set of edges, which resolves the conflict in adding lower -> upper,
@@ -76,7 +91,7 @@ type PriorityRelationGraph =
 
         and collectNext current next =
             let currentEdge = current, next
-            let currentIndex = this.EdgeIndices.[currentEdge]
+            let currentIndex = this.EdgeIndex currentEdge
 
             let children, childrenMinIndex = search next
 
@@ -106,6 +121,25 @@ type PriorityRelationGraph =
 
         let index' = this.NextEdgeIndex + 1
 
-        { Edges = edges'
-          EdgeIndices = edgeIndices'
-          NextEdgeIndex = index' }
+        { this with
+            Edges = edges'
+            EdgeIndices = edgeIndices'
+            NextEdgeIndex = index' }
+
+    static member sort this =
+        let rec collect (used, ret) current =
+            if used |> Set.contains current then
+                used, ret
+            else
+                let nbh = this.Edges.[current].Succ
+
+                let used' = used |> Set.add current
+
+                // Collect with iterating over all neighbors from the largest index.
+                let nbhDecreasing = nbh |> Seq.sortByDescending this.NodeIndex
+
+                let pushCurrent (used', ret) = used', current :: ret
+
+                ((used', ret), nbhDecreasing) ||> Seq.fold collect |> pushCurrent
+
+        ((Set.empty, []), this.Nodes) ||> Seq.fold collect
