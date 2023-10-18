@@ -1,3 +1,0 @@
-namespace Script
-
-open FSharpPlus

@@ -230,7 +230,7 @@ module FFmpegBuilder =
                 Filter.Create "scale" [ FArg.KV("w", "iw"); FArg.KV("h", height.ToString()) ] [ input ] [ output ]
             )
 
-    type Layer =
+    type Layer = // TODO: Priority.
         { Pos: Pos
           Resize: Resize option
           Duration: (float<Measure.sec> * float<Measure.sec>) option
