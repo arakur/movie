@@ -4,8 +4,12 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="Utils.fs" />
     <Compile Include="AST.fs" />
-    <Compile Include="Script.fs" />
+    <Compile Include="Value.fs" />
+    <Compile Include="PriorityRelationGraph.fs" />
+    <Compile Include="EvalEnv.fs" />
+    <Compile Include="Interpreter.fs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="FSharpPlus" Version="1.4.1" />
