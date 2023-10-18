@@ -1014,9 +1014,36 @@ module Interpreter =
             let env'' =
                 match config.BindsTo with
                 | None -> env'
-                | Some varName -> env'.WithVariable(varName, Value.AssetRef { Type = AssetType.Image; Id = assetId })
+                | Some varName -> env'.WithVariable(varName, Value.AssetRef { Type = AssetType.Video; Id = assetId })
 
             return env'', state'
+        }
+
+    let runSetPriority
+        (_movie: Frame.MovieBuilder)
+        (args: Value array)
+        (block: Statement list option)
+        (env: EvalEnv, state: Frame.MovieState)
+        : Result<EvalEnv * Frame.MovieState, string> =
+        let runSetPriorityStatement (acc: Result<EvalEnv, string>) (statement: Statement) =
+            monad {
+                let! env = acc
+
+                match statement with
+                | Do(expr, optBlock) ->
+                    let! lower, upper = expr |> tryEval env |> Result.bind Value.tryAsPriorityRelation
+                    return env.WithPriorityRelation(lower, upper)
+                | _ -> return! Error "Invalid statement."
+            }
+
+        monad {
+            do! args |> ArrayExt.tryAsEmpty "Expected no arguments."
+
+            let! block' = block |> Option.toResultWith "Expected block."
+
+            let! env' = (Ok env, block') ||> Seq.fold runSetPriorityStatement
+
+            return env', state
         }
 
     type private AddAudioState =
@@ -1094,7 +1121,7 @@ module Interpreter =
             let env'' =
                 match config.BindsTo with
                 | None -> env'
-                | Some varName -> env'.WithVariable(varName, Value.AssetRef { Type = AssetType.Image; Id = assetId })
+                | Some varName -> env'.WithVariable(varName, Value.AssetRef { Type = AssetType.Audio; Id = assetId })
 
             return env'', state'
         }
@@ -1128,6 +1155,7 @@ module Interpreter =
           InnerOperator.addImage, runAddImage
           InnerOperator.addAudio, runAddAudio
           InnerOperator.addVideo, runAddVideo
+          InnerOperator.setPriority, runSetPriority
           InnerOperator.remove, runRemove ]
         |> Map.ofSeq
 

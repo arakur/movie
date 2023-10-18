@@ -46,15 +46,15 @@ type PriorityRelationGraph =
 
         { this with Edges = edges' }
 
-    static member addEdge lhs rhs this =
-        // Memoized DFS to collect all edges, which is the minimal set of edges, which resolves the conflict in adding lhs -> rhs,
+    static member addEdge lower upper this =
+        // Memoized DFS to collect all edges, which is the minimal set of edges, which resolves the conflict in adding lower -> upper,
         // with choosing the minimum one respect to edge indices.
 
         // Create a cache to memoize the result of DFS.
 
         let mutable cache = Dictionary()
 
-        cache.Add(lhs, (DList.empty, System.Int32.MaxValue))
+        cache.Add(lower, (DList.empty, System.Int32.MaxValue))
 
         let cacheResult current ret =
             cache.[current] <- ret
@@ -87,9 +87,9 @@ type PriorityRelationGraph =
 
         // Collect edges to remove.
 
-        let edgesRemove, _ = search rhs
+        let edgesRemove, _ = search upper
 
-        // Remove edges and add an edge lhs -> rhs.
+        // Remove edges and add an edge lower -> upper.
 
         let removeEdge edges (remove0, remove1) =
             edges
@@ -99,10 +99,10 @@ type PriorityRelationGraph =
         let edges' =
             (this.Edges, edgesRemove)
             ||> Seq.fold removeEdge
-            |> Map.updateWith (PriorityRelationGraphNode.addSucc rhs >> Some) lhs
-            |> Map.updateWith (PriorityRelationGraphNode.addPred lhs >> Some) rhs
+            |> Map.updateWith (PriorityRelationGraphNode.addSucc upper >> Some) lower
+            |> Map.updateWith (PriorityRelationGraphNode.addPred lower >> Some) upper
 
-        let edgeIndices' = this.EdgeIndices |> Map.add (lhs, rhs) this.NextEdgeIndex
+        let edgeIndices' = this.EdgeIndices |> Map.add (lower, upper) this.NextEdgeIndex
 
         let index' = this.NextEdgeIndex + 1
 

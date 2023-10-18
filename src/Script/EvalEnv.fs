@@ -52,7 +52,7 @@ type EvalEnv
         | None -> failwithf "An inner operator `%s` not found." inner
         | Some 0 -> this.WithVariable(var, Value.InnerOperatorApplied(inner, [||]))
         | Some _ -> this.WithVariable(var, Value.InnerOperator inner)
-    
+
     member private this.WithAssetRefToPriorityRelation(asset: AssetRef) =
         EvalEnv(
             this.Variables,
@@ -61,16 +61,18 @@ type EvalEnv
             this.Priority |> PriorityRelationGraph.addNode asset
         )
 
-    member this.WithPriorityRelation(lhs: AssetRef, rhs: AssetRef) =
+    member this.WithPriorityRelation(lower: AssetRef, upper: AssetRef) =
         EvalEnv(
             this.Variables,
             this.InnerOperators,
             this.BinaryOperators,
-            this.Priority |> PriorityRelationGraph.addEdge lhs rhs
+            this.Priority |> PriorityRelationGraph.addEdge lower upper
         )
 
     member this.WithAssetRef(var: string, asset: AssetRef) =
-        this.WithVariable(var, Value.AssetRef asset).WithAssetRefToPriorityRelation(asset)
+        this
+            .WithVariable(var, Value.AssetRef asset)
+            .WithAssetRefToPriorityRelation(asset)
 
     member this.TryVariable(var: string) = this.Variables.TryFind var
 

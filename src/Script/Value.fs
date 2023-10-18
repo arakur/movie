@@ -50,12 +50,25 @@ type Numeral =
         | Float(f0, m0), Int(i1, m1) when m0 = m1 -> Ok(Float(f0 - float i1, m0))
         | _ -> Error "Invalid type; expected same measure."
 
+    static member tryLt lhs rhs =
+        match lhs, rhs with
+        | Int(i0, m0), Int(i1, m1) when m0 = m1 -> Ok(i0 < i1)
+        | Float(f0, m0), Float(f1, m1) when m0 = m1 -> Ok(f0 < f1)
+        | Int(i0, m0), Float(f1, m1) when m0 = m1 -> Ok(float i0 < f1)
+        | Float(f0, m0), Int(i1, m1) when m0 = m1 -> Ok(f0 < float i1)
+        | _ -> Error "Invalid type; expected same measure."
+
 [<RequireQualifiedAccess>]
 type AssetType =
+    | Speech
+    | Appearance
+    | Subtitle
+    | Background
+    //
     | Image
     | Video
     | Audio
-    | Subtitle
+    | TextBox
 
 type AssetRef = { Type: AssetType; Id: string }
 
@@ -63,6 +76,7 @@ type AssetRef = { Type: AssetType; Id: string }
 type Value =
     | Numeral of Numeral
     | String of string
+    | Boolean of bool
     | BinaryOperator of string
     | BinaryOperatorLeftApplied of string * Value
     | Tuple of Value array
@@ -70,6 +84,7 @@ type Value =
     | InnerOperatorPartiallyApplied of string * arity: int * Value RevList
     | InnerOperatorApplied of string * Value array
     | AssetRef of AssetRef
+    | PriorityRelation of lower: AssetRef * upper: AssetRef
 
     static member tryAsNumeral this =
         match this with
@@ -125,6 +140,11 @@ type Value =
         | AssetRef asset -> Ok asset
         | _ -> Error "Invalid type; expected asset reference."
 
+    static member tryAsPriorityRelation this =
+        match this with
+        | PriorityRelation(lower, upper) -> Ok(lower, upper)
+        | _ -> Error "Invalid type; expected asset reference."
+
     static member tryAdd lhs rhs =
         match lhs, rhs with
         | Numeral lhs, Numeral rhs -> Numeral.tryAdd lhs rhs |> Result.map Numeral
@@ -134,6 +154,14 @@ type Value =
         match lhs, rhs with
         | Numeral lhs, Numeral rhs -> Numeral.trySub lhs rhs |> Result.map Numeral
         | _ -> Error "Invalid type; expected numeral."
+
+    static member tryLt lhs rhs =
+        match lhs, rhs with
+        | Numeral lhs, Numeral rhs -> Numeral.tryLt lhs rhs |> Result.map Boolean
+        | AssetRef asset0, AssetRef asset1 -> Ok(PriorityRelation(lower = asset0, upper = asset1))
+        | _ -> Error "Invalid type; expected numeral."
+
+    static member tryGt lhs rhs = Value.tryLt rhs lhs
 
 module private InnerOperator =
     [<Literal>]
@@ -159,6 +187,9 @@ module private InnerOperator =
     let addVideo = "add-video"
 
     [<Literal>]
+    let setPriority = "set-priority"
+
+    [<Literal>]
     let remove = "remove"
 
     [<Literal>]
@@ -175,6 +206,7 @@ module private InnerOperator =
            addImage, 0
            addAudio, 0
            addVideo, 0
+           setPriority, 0
            remove, 1
            on, 1
            hflip, 0 |]
@@ -186,7 +218,14 @@ module private BinaryOperators =
     [<Literal>]
     let sub = "-"
 
-    let binaryOperators = [| add, Value.tryAdd; sub, Value.trySub |]
+    [<Literal>]
+    let lt = "<"
+
+    [<Literal>]
+    let gt = ">"
+
+    let binaryOperators =
+        [| add, Value.tryAdd; sub, Value.trySub; lt, Value.tryLt; gt, Value.tryGt |]
 
 type IEvalEnv =
     abstract member TryVariable: string -> Value option
@@ -199,8 +238,10 @@ module Value =
         match f with
         | Value.Numeral _
         | Value.String _
+        | Value.Boolean _
         | Value.Tuple _
-        | Value.AssetRef _ -> Error "Cannot apply."
+        | Value.AssetRef _
+        | Value.PriorityRelation _ -> Error "Cannot apply."
         | Value.BinaryOperator op -> Ok <| Value.BinaryOperatorLeftApplied(op, arg)
         | Value.BinaryOperatorLeftApplied(op, lhs) ->
             monad {
