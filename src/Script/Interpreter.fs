@@ -1031,6 +1031,9 @@ module Interpreter =
 
                 match statement with
                 | Do(expr, optBlock) ->
+                    if optBlock.IsSome then
+                        do! Error "Expected no block."
+
                     let! lower, upper = expr |> tryEval env |> Result.bind Value.tryAsPriorityRelation
                     return env.WithPriorityRelation(lower, upper)
                 | _ -> return! Error "Invalid statement."
