@@ -14,6 +14,8 @@ module RevList =
         { Contents = v :: this.Contents
           Length = this.Length + 1 }
 
+    let singleton<'a> v = { Contents = [ v ]; Length = 1 }
+
     let toList<'a> (this: RevList<'a>) = this.Contents |> List.rev
 
     let toArray<'a> (this: RevList<'a>) = this |> toList |> Array.ofList
@@ -270,6 +272,11 @@ type PriorityRelationGraph =
       Edges: Map<AssetRef, PriorityRelationGraphNode>
       EdgeIndices: Map<AssetRef * AssetRef, int> }
 
+    static member empty =
+        { NextEdgeIndex = 0
+          Edges = Map.empty
+          EdgeIndices = Map.empty }
+
     static member addNode node this =
         let edges' = this.Edges |> Map.add node PriorityRelationGraphNode.empty
 
@@ -343,7 +350,8 @@ type EvalEnv
     (
         variables: Map<string, Value>,
         innerOperators: Map<string, int>,
-        binaryOperators: Map<string, Value -> Value -> Result<Value, string>>
+        binaryOperators: Map<string, Value -> Value -> Result<Value, string>>,
+        priority: PriorityRelationGraph
     ) =
     static member prelude() : EvalEnv =
         let innerOperators = InnerOperator.innerOperators |> Map.ofSeq
@@ -360,21 +368,23 @@ type EvalEnv
 
         let binaryOperators = BinaryOperators.binaryOperators |> Map.ofSeq
 
-        EvalEnv(variables, innerOperators, binaryOperators)
+        let priority = PriorityRelationGraph.empty
+
+        EvalEnv(variables, innerOperators, binaryOperators, priority)
 
     member val Variables = variables
     member val InnerOperators = innerOperators
     member val BinaryOperators = binaryOperators
-    member val PriorityRelations = Set.empty
+    member val PriorityRelations = priority
 
     member this.WithVariable(var: string, value: Value) =
-        EvalEnv(this.Variables.Add(var, value), this.InnerOperators, this.BinaryOperators)
+        EvalEnv(this.Variables.Add(var, value), this.InnerOperators, this.BinaryOperators, this.PriorityRelations)
 
     member this.WithInnerOperator(inner: string, arity: int) =
-        EvalEnv(this.Variables, this.InnerOperators.Add(inner, arity), this.BinaryOperators)
+        EvalEnv(this.Variables, this.InnerOperators.Add(inner, arity), this.BinaryOperators, this.PriorityRelations)
 
     member this.WithBinaryOperator(bin: string, f: Value -> Value -> Result<Value, string>) =
-        EvalEnv(this.Variables, this.InnerOperators, this.BinaryOperators.Add(bin, f))
+        EvalEnv(this.Variables, this.InnerOperators, this.BinaryOperators.Add(bin, f), this.PriorityRelations)
 
     member this.WithInnerOperatorSynonym(var: string, inner: string) =
         let arity = this.InnerOperators.TryFind inner
@@ -385,13 +395,12 @@ type EvalEnv
         | Some _ -> this.WithVariable(var, Value.InnerOperator inner)
 
     member this.WithPriorityRelation(lhs: AssetRef, rhs: AssetRef) =
-        let priorityRelations' = this.PriorityRelations |> Set.add (lhs, rhs)
-
-        // If the relation conflicts with existing relations then old relations are removed.
-
-        //
-
-        failwith "TODO" // TODO
+        EvalEnv(
+            this.Variables,
+            this.InnerOperators,
+            this.BinaryOperators,
+            this.PriorityRelations |> PriorityRelationGraph.addEdge lhs rhs
+        )
 
     member this.TryVariable(var: string) = this.Variables.TryFind var
 
@@ -425,7 +434,7 @@ module Value =
                 match arity with
                 | 0 -> return! Error "Cannot apply."
                 | 1 -> return Value.InnerOperatorApplied(op, [| arg |])
-                | _ -> return Value.InnerOperatorPartiallyApplied(op, arity, RevList.empty |> RevList.add arg)
+                | _ -> return Value.InnerOperatorPartiallyApplied(op, arity, RevList.singleton arg)
             }
         | Value.InnerOperatorPartiallyApplied(op, arity, args) ->
             if args.Length + 1 = arity then
