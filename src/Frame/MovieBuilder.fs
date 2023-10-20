@@ -143,17 +143,19 @@ type MovieBuilder() =
 
     [<CustomOperation "addImage">]
     member __.AddImage(s: MovieState, id: string, path: string, pos: Pos, resize: Resize option) =
-        let asset =
-            Asset.Image
-                { Path = path
-                  Pos = pos
-                  Resize = resize
-                  StartFrame = s.Frames.Length
-                  EndFrame = None }
+        let asset: ImageAsset =
+            { Path = path
+              Pos = pos
+              Resize = resize }
+
+        let assetWithDuration =
+            { Asset = asset
+              StartFrame = s.Frames.Length
+              EndFrame = None }
 
         let assets = s.Assets
 
-        let assets' = assets |> Map.add id asset
+        let assets' = assets |> Map.add id assetWithDuration
 
         { s with Assets = assets' }
 
@@ -168,18 +170,20 @@ type MovieBuilder() =
             trimStart: float<sec> option,
             trimEnd: float<sec> option
         ) =
-        let asset =
-            Asset.Video
-                { Path = path
-                  Pos = pos
-                  Resize = resize
-                  Trim = (trimStart, trimEnd)
-                  StartFrame = s.Frames.Length
-                  EndFrame = None }
+        let asset: VideoAsset =
+            { Path = path
+              Pos = pos
+              Resize = resize
+              Trim = (trimStart, trimEnd) }
+
+        let assetWithDuration =
+            { Asset = asset
+              StartFrame = s.Frames.Length
+              EndFrame = None }
 
         let assets = s.Assets
 
-        let assets' = assets |> Map.add id asset
+        let assets' = assets |> Map.add id assetWithDuration
 
         { s with Assets = assets' }
 
@@ -192,16 +196,18 @@ type MovieBuilder() =
             trimStart: float<sec> option,
             trimEnd: float<sec> option
         ) =
-        let asset =
-            Asset.Audio
-                { Path = path
-                  Trim = (trimStart, trimEnd)
-                  StartFrame = s.Frames.Length
-                  EndFrame = None }
+        let asset: AudioAsset =
+            { Path = path
+              Trim = trimStart, trimEnd }
+
+        let assetWithDuration =
+            { Asset = asset
+              StartFrame = s.Frames.Length
+              EndFrame = None }
 
         let assets = s.Assets
 
-        let assets' = assets |> Map.add id asset
+        let assets' = assets |> Map.add id assetWithDuration
 
         { s with Assets = assets' }
 
@@ -211,7 +217,7 @@ type MovieBuilder() =
 
         let asset = assets.[id]
 
-        let assetEnded = asset |> Asset.withEndFrame s.Frames.Length
+        let assetEnded = asset |> AssetWithDuration.withEndFrame s.Frames.Length
 
         let assets' = assets |> Map.add id assetEnded
 
@@ -260,6 +266,4 @@ module MovieBuilder =
     let movie = MovieBuilder()
 
     let compose (env: Env.Env) (state: MovieState) (output: Path) =
-        let frameOutputs = FrameOutput.framesToOutput env (state.Frames |> Seq.toList)
-
-        FrameOutput.exportVideo env.FFmpeg state.Background.ToFFmpegBackgroundInput frameOutputs state.Assets output
+        Export.exportVideo env state.Background.ToFFmpegBackgroundInput state.Frames state.Assets output

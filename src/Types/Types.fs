@@ -13,7 +13,10 @@ type Color =
         | RGB(r, g, b) -> sprintf "rgb(%d, %d, %d)" r g b
         | RGBA(r, g, b, a) -> sprintf "rgba(%d, %d, %d, %d)" r g b a
 
-type Pos = { X: int<px>; Y: int<px> }
+type Pos =
+    { X: int<px>; Y: int<px> }
+
+    static member zero = { X = 0<px>; Y = 0<px> }  
 
 type PosFloat =
     { X: float<px>
