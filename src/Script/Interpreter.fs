@@ -911,7 +911,7 @@ module Interpreter =
             let env'' =
                 match config.BindsTo with
                 | None -> env'
-                | Some varName -> env'.WithVariable(varName, Value.AssetRef { Type = AssetType.Image; Id = assetId })
+                | Some varName -> env'.WithVariable(varName, Value.AssetRef(AssetRef.Image assetId))
 
             return env'', state'
         }
@@ -1014,20 +1014,23 @@ module Interpreter =
             let env'' =
                 match config.BindsTo with
                 | None -> env'
-                | Some varName -> env'.WithVariable(varName, Value.AssetRef { Type = AssetType.Video; Id = assetId })
+                | Some varName -> env'.WithVariable(varName, Value.AssetRef(AssetRef.Video assetId))
 
             return env'', state'
         }
 
     let runSetPriority
-        (_movie: Frame.MovieBuilder)
+        (movie: Frame.MovieBuilder)
         (args: Value array)
         (block: Statement list option)
         (env: EvalEnv, state: Frame.MovieState)
         : Result<EvalEnv * Frame.MovieState, string> =
-        let runSetPriorityStatement (acc: Result<EvalEnv, string>) (statement: Statement) =
+        let runSetPriorityStatement
+            (acc: Result<EvalEnv * Frame.MovieState, string>)
+            (statement: Statement)
+            : Result<EvalEnv * Frame.MovieState, string> =
             monad {
-                let! env = acc
+                let! (env, state) = acc
 
                 match statement with
                 | Do(expr, optBlock) ->
@@ -1035,7 +1038,9 @@ module Interpreter =
                         do! Error "Expected no block."
 
                     let! lower, upper = expr |> tryEval env |> Result.bind Value.tryAsPriorityRelation
-                    return env.WithPriorityRelation(lower, upper)
+                    let! lower' = lower.TryToLayerId
+                    let! upper' = upper.TryToLayerId
+                    return env, movie.AddPriorityRelation(state, lower', upper')
                 | _ -> return! Error "Invalid statement."
             }
 
@@ -1044,9 +1049,9 @@ module Interpreter =
 
             let! block' = block |> Option.toResultWith "Expected block."
 
-            let! env' = (Ok env, block') ||> Seq.fold runSetPriorityStatement
+            let! env', state' = (Ok(env, state), block') ||> Seq.fold runSetPriorityStatement
 
-            return env', state
+            return env', state'
         }
 
     type private AddAudioState =
@@ -1124,7 +1129,7 @@ module Interpreter =
             let env'' =
                 match config.BindsTo with
                 | None -> env'
-                | Some varName -> env'.WithVariable(varName, Value.AssetRef { Type = AssetType.Audio; Id = assetId })
+                | Some varName -> env'.WithVariable(varName, Value.AssetRef(AssetRef.Audio assetId))
 
             return env'', state'
         }
@@ -1144,7 +1149,9 @@ module Interpreter =
             if block.IsSome then
                 do! Error "Expected no block."
 
-            let state' = movie.Remove(state, assetRef.Id)
+            let! assetId = assetRef.TryId
+
+            let state' = movie.Remove(state, assetId)
             return env, state'
         }
 

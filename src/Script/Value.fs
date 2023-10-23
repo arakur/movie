@@ -59,18 +59,33 @@ type Numeral =
         | _ -> Error "Invalid type; expected same measure."
 
 [<RequireQualifiedAccess>]
-type AssetType =
-    | Speech
-    | Appearance
-    | Subtitle
-    | Background
-    //
-    | Image
-    | Video
-    | Audio
-    | TextBox
+type AssetRef =
+    | Speech of frameIndex: int
+    | Appearance of name: string * frameIndex: int
+    | Subtitle of frameIndex: int
+    | Image of id: string
+    | Video of id: string
+    | Audio of id: string
+    | TextBox of id: string
 
-type AssetRef = { Type: AssetType; Id: string }
+    member this.TryId =
+        match this with
+        | Image id
+        | Video id
+        | Audio id
+        | TextBox id -> Ok id
+        | _ -> Error "Expected a user asset reference."
+
+    member this.TryToLayerId =
+        match this with
+        | Speech _ -> Error "Speech does not have layer."
+        | Appearance(name, frameIndex) -> Ok(Frame.LayerId.Appearance(name, frameIndex))
+        | Subtitle frameIndex -> Ok(Frame.LayerId.Subtitle frameIndex)
+        | Image id
+        | Video id
+        | TextBox id -> Ok(Frame.LayerId.Asset id)
+        | Audio id -> Error "Audio does not have layer."
+
 
 [<RequireQualifiedAccess>]
 type Value =

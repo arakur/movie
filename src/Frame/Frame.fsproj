@@ -4,6 +4,8 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="Priority.fs" />
+    <Compile Include="PriorityRelationGraph.fs" />
     <Compile Include="Frame.fs" />
     <Compile Include="Assets.fs" />
     <Compile Include="Export.fs" />

@@ -29,4 +29,5 @@ type FrameAppearance =
 type Frame =
     { Speech: Voicevox.Speech
       Subtitle: Subtitle
-      FrameAppearances: FrameAppearance list }
+      FrameAppearances: FrameAppearance list
+      Priority: LayerId list }

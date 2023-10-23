@@ -144,6 +144,11 @@ type private ExportBuilder(env: Env.Env, assets': Assets, frames: Frame seq, bac
 
     let assets =
         let frameAssets = [] // TODO
+        // seq {
+        //     for frame in frames do
+        //         for appearance in frame.FrameAppearances do
+        //             yield appearance, appearance.Appearance
+        // }
 
         assets' |> Map.toSeq |> Seq.append frameAssets |> Map.ofSeq
 
@@ -222,6 +227,31 @@ type private ExportBuilder(env: Env.Env, assets': Assets, frames: Frame seq, bac
             | _ -> return None
         }
 
+    member private this.TryAInput assetWithDuration =
+        let asset = assetWithDuration.Asset
+        let startFrame = assetWithDuration.StartFrame
+        let endFrame = assetWithDuration.EndFrame
+        let startSec = slits[startFrame]
+
+        let endSec =
+            endFrame
+            |> Option.map (fun endFrame -> slits[endFrame])
+            |> Option.defaultValue wholeLength
+
+        let arguments = this.InputArguments assetWithDuration
+
+        builder {
+            match asset with
+            | :? IAudioAsset as asset ->
+                let! { AInput = aInput } =
+                    inputNode
+                        { Path = asset.Path
+                          Arguments = arguments }
+
+                return Some aInput
+            | _ -> return None
+        }
+
     member private this.ToLayer(assetWithDuration: AssetWithDuration) =
         builder {
             match assetWithDuration.Asset with
@@ -255,7 +285,33 @@ type private ExportBuilder(env: Env.Env, assets': Assets, frames: Frame seq, bac
                         { Path = asset.Path
                           Arguments = this.InputArguments assetWithDuration }
 
-                return Some aInput
+                let durationStart = slits[assetWithDuration.StartFrame]
+
+                let trimStart = asset.Trim |> fst |> Option.defaultValue 0.0<sec>
+
+                let durationEnd =
+                    let durationEnd' =
+                        assetWithDuration.EndFrame
+                        |> Option.map (fun frame -> slits[frame])
+                        |> Option.defaultValue wholeLength
+
+                    let durationTrimmed =
+                        asset.Trim
+                        |> snd
+                        |> Option.map (fun trimEnd -> durationStart + trimEnd)
+                        |> Option.defaultValue wholeLength
+
+                    min durationEnd' durationTrimmed
+
+                let delay = durationStart + trimStart
+
+                let! delayed = innerNode
+                do! adelay delay aInput delayed
+
+                let! trimmed = innerNode
+                do! atrim (durationStart, durationEnd) delayed trimmed
+
+                return Some trimmed
             | _ -> return None
         }
 

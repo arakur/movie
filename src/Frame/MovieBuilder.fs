@@ -82,7 +82,8 @@ type MovieState =
       CurrentSpeaker: Name option
       Subtitle: SubtitleState
       Assets: Assets
-      Background: Background }
+      Background: Background
+      Priority: PriorityRelationGraph<LayerId> }
 
     static member empty =
         { Frames = Deque.empty
@@ -97,7 +98,8 @@ type MovieState =
               Pos = { X = 0<px>; Y = 0<px> }
               Size = { Width = 0<px>; Height = 0<px> } }
           Assets = Map.empty
-          Background = Background.RGB(0, 0, 0) }
+          Background = Background.RGB(0, 0, 0)
+          Priority = PriorityRelationGraph.empty () }
 
 type Initialize =
     { Font: SubtitleFont
@@ -119,7 +121,8 @@ type MovieBuilder() =
               Pos = initialize.Pos
               Size = initialize.Size }
           Assets = Map.empty
-          Background = initialize.Background }
+          Background = initialize.Background
+          Priority = PriorityRelationGraph.empty () }
 
     [<CustomOperation "addSpeaker">]
     member __.AddSpeaker(s: MovieState, name: Name, speaker: SpeakerState) =
@@ -157,7 +160,13 @@ type MovieBuilder() =
 
         let assets' = assets |> Map.add id assetWithDuration
 
-        { s with Assets = assets' }
+        let layerId = LayerId.Asset id
+
+        let priority' = s.Priority |> PriorityRelationGraph.addNode layerId
+
+        { s with
+            Assets = assets'
+            Priority = priority' }
 
     [<CustomOperation "addVideo">]
     member __.AddVideo
@@ -185,7 +194,13 @@ type MovieBuilder() =
 
         let assets' = assets |> Map.add id assetWithDuration
 
-        { s with Assets = assets' }
+        let layerId = LayerId.Asset id
+
+        let priority' = s.Priority |> PriorityRelationGraph.addNode layerId
+
+        { s with
+            Assets = assets'
+            Priority = priority' }
 
     [<CustomOperation "addAudio">]
     member __.AddAudio
@@ -236,6 +251,12 @@ type MovieBuilder() =
 
         this.ModifySpeaker(s, name, f)
 
+    [<CustomOperation "priority">]
+    member __.AddPriorityRelation(s: MovieState, lower: LayerId, upper: LayerId) =
+        let priority' = s.Priority |> PriorityRelationGraph.addEdge lower upper
+
+        { s with Priority = priority' }
+
     [<CustomOperation "talk">]
     member __.YieldFrame(s: MovieState, name: Name, subtitleText: string, ?speechText: string) =
         let speaker = s.Speakers.[name]
@@ -250,7 +271,8 @@ type MovieBuilder() =
         let frame =
             { Speech = speech
               Subtitle = subtitle
-              FrameAppearances = frameAppearances }
+              FrameAppearances = frameAppearances
+              Priority = s.Priority |> PriorityRelationGraph.sort }
 
         { s with Frames = s.Frames.Conj frame }
 
